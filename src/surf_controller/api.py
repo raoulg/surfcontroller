@@ -102,7 +102,7 @@ class Workspace:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
             return None
 
-    def save(self, data):
+    def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(["id", "name", "active"])  # Write header
@@ -112,7 +112,7 @@ class Workspace:
         logger.info(f"Data successfully saved to {self.OUTPUT_FILE}")
 
 
-def first_run(stdscr):
+def first_run(stdscr: curses.window):
     scriptdir = Path.home() / config["files"]["scriptdir"]
     if not scriptdir.exists():
         logger.info(f"Creating directory {scriptdir}")

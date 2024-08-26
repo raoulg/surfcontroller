@@ -1,7 +1,6 @@
 import shutil
 from pathlib import Path
 
-
 def setup_config():
     # Define the user's config directory
     user_config_dir = Path.home() / ".surf_controller"
@@ -17,3 +16,5 @@ def setup_config():
 
 
 setup_config()
+
+__version__ = "0.2.0"
