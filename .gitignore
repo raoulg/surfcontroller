@@ -1,0 +1,17 @@
+# python generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.vscode/
+
+# venv
+.venv
+.python-version
+api-token.txt
+csrf-token.txt
+
+*.log
+*.csv
