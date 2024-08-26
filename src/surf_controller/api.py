@@ -5,9 +5,10 @@ import time
 import curses
 from pathlib import Path
 import requests
+import shutil
 from collections import namedtuple
 
-from utils import logger, config
+from surf_controller.utils import logger, config
 
 
 class Action:
@@ -113,6 +114,16 @@ class Workspace:
 
 def first_run(stdscr):
     scriptdir = Path.home() / config["files"]["scriptdir"]
+    if not scriptdir.exists():
+        logger.info(f"Creating directory {scriptdir}")
+        scriptdir.mkdir(parents=True)
+
+    user_config_file = scriptdir / "config.toml"
+    if not user_config_file.exists():
+        default_config = Path(__file__).parent / "config.toml"
+        shutil.copy(default_config, user_config_file)
+        logger.info(f"Created default configuration file at {user_config_file}")
+
     auth_token_file = scriptdir / config["files"]["api-token"]
     auth_created = False
     csrf_token_file = scriptdir / config["files"]["csrf-token"]
