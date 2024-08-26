@@ -1,7 +1,7 @@
 [project]
-name = "mads-autoshutdown"
+name = "surf-controller"
 version = "0.1.0"
-description = "Add your description here"
+description = "CLI interface to control SURF VMs"
 authors = [
     { name = "Raoul Grouls", email = "Raoul.Grouls@han.nl" }
 ]
@@ -23,4 +23,4 @@ dev-dependencies = []
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/mads_autoshutdown"]
+packages = ["src/surf_controller"]
