@@ -31,13 +31,13 @@ class Action:
         for item in data:
             timestamp = time.strftime("%d-%m-%Y %H:%M:%S")
             if id_filter and item.name not in id_filter:
-                logger.info(
-                    f"{timestamp} | {item.name} | {item.id} | {item.active} : skipping (not in id_filter)"
+                logger.debug(
+                    f"{timestamp} | {item.name} | {item.id} | active: {item.active} : skipping (not in id_filter)"
                 )
                 continue
 
             logger.info(
-                f"{timestamp} | {item.name} | {item.id} | {item.active} : Attempt to {do}..."
+                f"{timestamp} | {item.name} | {item.id} | active: {item.active} : Attempt to {do}..."
             )
 
             full_url = f"{self.URL}/{item.id}/actions/{do}/"
@@ -52,14 +52,14 @@ class Action:
 
             if response.status_code == 400:
                 logger.warning(
-                    f"{timestamp} | {item.name} | {item.id} | {item.active} : Error {do}"
+                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : Error {do}"
                 )
                 logger.warning(
-                    f"{timestamp} | {item.name} | {item.id} | {item.active} : {response.text}"
+                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : {response.text}"
                 )
             else:
                 logger.info(
-                    f"{timestamp} | {item.name} | {item.id} | {item.active} : Success {do}"
+                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : Success {do}"
                 )
         logger.info(f"Finished {do} for all workspaces")
 
@@ -96,7 +96,6 @@ class Workspace:
             Data = namedtuple("Data", ["id", "name", "active"])
             for result in data["results"]:
                 results.append(Data(result["id"], result["name"], result["active"]))
-                # results.append((result["id"], result["name"], result["active"]))
             return results
         else:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
