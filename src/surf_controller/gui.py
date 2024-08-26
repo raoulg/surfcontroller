@@ -1,10 +1,10 @@
 import curses
-from pathlib import Path
-import time
 import threading
+import time
+from pathlib import Path
 
-from surf_controller.utils import logger, config
-from surf_controller.api import Workspace, Action, first_run
+from surf_controller.api import Action, Workspace, first_run
+from surf_controller.utils import config, logger
 
 
 class Controller:

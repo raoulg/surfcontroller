@@ -1,14 +1,15 @@
 import argparse
 import csv
-import json
-import time
 import curses
-from pathlib import Path
-import requests
+import json
 import shutil
+import time
 from collections import namedtuple
+from pathlib import Path
 
-from surf_controller.utils import logger, config
+import requests
+
+from surf_controller.utils import config, logger
 
 
 class Action:
