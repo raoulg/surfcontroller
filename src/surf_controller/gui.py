@@ -1,6 +1,7 @@
 import curses
 from pathlib import Path
 import time
+import threading
 
 from surf_controller.utils import logger, config
 from surf_controller.api import Workspace, Action, first_run
@@ -9,6 +10,10 @@ from surf_controller.api import Workspace, Action, first_run
 class Controller:
     def __init__(self):
         self.scriptdir = Path.home() / config["files"]["scriptdir"]
+        self.log_file = self.scriptdir / "logs.log"
+        self.show_logs = False
+        self.logs = []
+        self.log_lock = threading.Lock()
         self.URL = config["surf"]["URL"] + "/?application_type=Compute&deleted=false"
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
@@ -44,14 +49,31 @@ class Controller:
             stdscr.addstr(
                 idx + 2,
                 0,
-                "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,\n 'a' to select all,\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,\n 'q' to quit",
+                "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
+                "\n 'a' to select all,\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
+                "\n'l' to toggle logs,\n'q' to quit",
             )
+            if self.show_logs:
+                stdscr.addstr(len(vms) + 12, 0, "===logs===")
+                for idx, log in enumerate(self.logs[-10:]):
+                    stdscr.addstr(len(vms) + 13 + idx, 0, log)
             stdscr.refresh()
 
         def show_status_message(message):
             stdscr.addstr(len(vms) + 10, 0, message)
             stdscr.refresh()
             time.sleep(2)  # Show the message for 2 seconds
+
+        def update_logs():
+            while True:
+                with open(self.log_file, 'r') as f:
+                    new_logs = f.readlines()[-10:]
+                with self.log_lock:
+                    self.logs = new_logs
+                time.sleep(1)  # Check for new logs every second
+
+        log_thread = threading.Thread(target=update_logs, daemon=True)
+        log_thread.start()
 
         print_menu()
 
@@ -83,13 +105,15 @@ class Controller:
             elif key == ord("r"):  # Resume selected VMs
                 idlist = [vms[i].name for i in range(len(vms)) if selected[i]]
                 logger.info(f"Resuming {idlist}...\n")
-                show_status_message(f"Resuming {idlist}")
+                show_status_message(f"Resuming {idlist}...")
 
                 self.action("resume", vms, idlist)
                 time.sleep(10)
                 vms = self.workspace.get_workspaces(save=False)
                 selected = [False] * len(vms)
                 stdscr.refresh()
+            elif key == ord("l"):  # Toggle logs
+                self.show_logs = not self.show_logs
             elif key == ord("q"):  # Quit
                 break
             print_menu()
