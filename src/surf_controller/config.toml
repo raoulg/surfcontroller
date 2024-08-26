@@ -1,0 +1,9 @@
+[files]
+scriptdir = ".surf_controller"
+api-token = "api-token.txt"
+csrf-token = "csrf-token.txt"
+ids = "output.csv"
+
+[surf]
+URL = "https://gw.live.surfresearchcloud.nl/v1/workspace/workspaces"
+
