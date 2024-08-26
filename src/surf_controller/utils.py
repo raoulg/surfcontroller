@@ -30,7 +30,9 @@ def setup_logger(log_file=Path.home() / ".surf_controller/logs.log", use_curses=
     # Create and set up the file handler
     f_handler = logging.FileHandler(log_file)
     f_handler.setLevel(logging.INFO)
-    f_formatter = logging.Formatter("%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s")
+    f_formatter = logging.Formatter(
+        "%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s"
+    )
     f_handler.setFormatter(f_formatter)
     logger.addHandler(f_handler)
 
@@ -42,11 +44,11 @@ def setup_logger(log_file=Path.home() / ".surf_controller/logs.log", use_curses=
         # Define ANSI color codes
         RESET = "\033[0m"
         COLOR_MAP = {
-            logging.DEBUG: "\033[34m",    # Blue
-            logging.INFO: "\033[32m",     # Green
+            logging.DEBUG: "\033[34m",  # Blue
+            logging.INFO: "\033[32m",  # Green
             logging.WARNING: "\033[33m",  # Yellow
-            logging.ERROR: "\033[31m",    # Red
-            logging.CRITICAL: "\033[41m", # Red background
+            logging.ERROR: "\033[31m",  # Red
+            logging.CRITICAL: "\033[41m",  # Red background
         }
 
         class CustomFormatter(logging.Formatter):
@@ -56,7 +58,9 @@ def setup_logger(log_file=Path.home() / ".surf_controller/logs.log", use_curses=
                 log_msg = f"{log_color}{record.asctime} - {record.filename} - {record.lineno} - {record.levelname} - {RESET}{record.msg}"
                 return log_msg
 
-        c_formatter = CustomFormatter("%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s")
+        c_formatter = CustomFormatter(
+            "%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s"
+        )
         c_handler.setFormatter(c_formatter)
         logger.addHandler(c_handler)
 

@@ -66,7 +66,7 @@ class Controller:
 
         def update_logs():
             while True:
-                with open(self.log_file, 'r') as f:
+                with open(self.log_file, "r") as f:
                     new_logs = f.readlines()[-10:]
                 with self.log_lock:
                     self.logs = new_logs
@@ -118,10 +118,12 @@ class Controller:
                 break
             print_menu()
 
+
 def main():
     curses.wrapper(first_run)
     controller = Controller()
     curses.wrapper(controller)
+
 
 if __name__ == "__main__":
     main()

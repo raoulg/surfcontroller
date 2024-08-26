@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 
+
 def setup_config():
     # Define the user's config directory
     user_config_dir = Path.home() / ".surf_controller"
@@ -13,5 +14,6 @@ def setup_config():
     if not user_config_file.exists():
         default_config = Path(__file__).parent / "config.toml"
         shutil.copy(default_config, user_config_file)
+
 
 setup_config()
