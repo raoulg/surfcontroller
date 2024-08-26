@@ -1,13 +1,14 @@
 import logging
 import tomllib
+from pathlib import Path
 
 
-def get_config(configfile="config.toml"):
+def get_config(configfile=Path.home() / ".surf_controller/config.toml"):
     with open(configfile, "rb") as f:
         return tomllib.load(f)
 
 
-def setup_logger(log_file="logs.log"):
+def setup_logger(log_file=Path.home() / ".surf_controller/logs.log"):
     """
     Sets up a logger that prints useful information such as filename, line number, and time.
     The logger will also save logs to a specified log file, with colored output to the console.
@@ -19,7 +20,7 @@ def setup_logger(log_file="logs.log"):
     logger = logging.getLogger(__name__)
 
     # Set the minimum logging level (could be DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.INFO)
 
     # Create handlers
     c_handler = logging.StreamHandler()  # Console handler
@@ -68,4 +69,4 @@ def setup_logger(log_file="logs.log"):
 
 
 config = get_config()
-logger = setup_logger(config["files"]["logfile"])
+logger = setup_logger()
