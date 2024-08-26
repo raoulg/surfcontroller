@@ -2,8 +2,8 @@ import curses
 from pathlib import Path
 import time
 
-from utils import logger, config
-from api import Workspace, Action, first_run
+from surf_controller.utils import logger, config
+from surf_controller.api import Workspace, Action, first_run
 
 
 class Controller:
@@ -48,6 +48,11 @@ class Controller:
             )
             stdscr.refresh()
 
+        def show_status_message(message):
+            stdscr.addstr(len(vms) + 10, 0, message)
+            stdscr.refresh()
+            time.sleep(2)  # Show the message for 2 seconds
+
         print_menu()
 
         while True:
@@ -61,14 +66,14 @@ class Controller:
             elif key == ord("a"):  # Select all
                 selected = [True] * len(vms)
             elif key == ord("u"):  # Update VM list
-                stdscr.addstr(2, 0, "Updating VM list...")
+                show_status_message("Updating VM list...\n")
                 vms = self.workspace.get_workspaces(save=False)
                 logger.info("Updated VM list...")
                 selected = [False] * len(vms)
                 stdscr.refresh()
             elif key == ord("p"):
                 idlist = [vms[i].name for i in range(len(vms)) if selected[i]]
-                logger.info(f"Pausing {idlist}")
+                show_status_message(f"Pausing {idlist}...\n")
                 stdscr.addstr(2, 0, f"Pausing {idlist}")
                 self.action("pause", vms, idlist)
                 time.sleep(10)
@@ -77,8 +82,8 @@ class Controller:
                 stdscr.refresh()
             elif key == ord("r"):  # Resume selected VMs
                 idlist = [vms[i].name for i in range(len(vms)) if selected[i]]
-                logger.info(f"Resuming {idlist}")
-                stdscr.addstr(2, 0, f"Resuming {idlist}")
+                logger.info(f"Resuming {idlist}...\n")
+                show_status_message(f"Resuming {idlist}")
 
                 self.action("resume", vms, idlist)
                 time.sleep(10)
@@ -89,8 +94,10 @@ class Controller:
                 break
             print_menu()
 
-
-if __name__ == "__main__":
+def main():
     curses.wrapper(first_run)
     controller = Controller()
     curses.wrapper(controller)
+
+if __name__ == "__main__":
+    main()
