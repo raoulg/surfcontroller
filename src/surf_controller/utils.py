@@ -1,5 +1,6 @@
 import logging
 import tomllib
+import sys
 from pathlib import Path
 
 
@@ -8,62 +9,56 @@ def get_config(configfile=Path.home() / ".surf_controller/config.toml"):
         return tomllib.load(f)
 
 
-def setup_logger(log_file=Path.home() / ".surf_controller/logs.log"):
+def setup_logger(log_file=Path.home() / ".surf_controller/logs.log", use_curses=True):
     """
     Sets up a logger that prints useful information such as filename, line number, and time.
-    The logger will also save logs to a specified log file, with colored output to the console.
+    The logger will save logs to a specified log file, and optionally output to console if not in curses mode.
 
-    :param log_file: The name of the log file where logs should be saved (default is 'logs.log')
+    :param log_file: The name of the log file where logs should be saved (default is '.surf_controller/logs.log' in user's home directory)
+    :param use_curses: Boolean flag to indicate if the script is running in curses mode
     :return: Configured logger instance
     """
     # Create a custom logger
     logger = logging.getLogger(__name__)
 
-    # Set the minimum logging level (could be DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    # Set the minimum logging level
     logger.setLevel(logging.INFO)
 
-    # Create handlers
-    c_handler = logging.StreamHandler()  # Console handler
-    f_handler = logging.FileHandler(log_file)  # File handler
+    # Ensure the directory for the log file exists
+    log_file.parent.mkdir(parents=True, exist_ok=True)
 
-    # Set level for handlers
-    c_handler.setLevel(logging.INFO)
+    # Create and set up the file handler
+    f_handler = logging.FileHandler(log_file)
     f_handler.setLevel(logging.INFO)
-
-    # Define ANSI color codes
-    RESET = "\033[0m"
-    COLOR_MAP = {
-        logging.DEBUG: "\033[34m",  # Blue
-        logging.INFO: "\033[32m",  # Green
-        logging.WARNING: "\033[33m",  # Yellow
-        logging.ERROR: "\033[31m",  # Red
-        logging.CRITICAL: "\033[41m",  # Red background
-    }
-
-    # Custom formatter that includes colors
-    class CustomFormatter(logging.Formatter):
-        def format(self, record):
-            # Use the original format time method to get the asctime
-            record.asctime = self.formatTime(record, self.datefmt)
-            log_color = COLOR_MAP.get(record.levelno, RESET)
-            log_msg = f"{log_color}{record.asctime} - {record.filename} - {record.lineno} - {record.levelname} - {RESET}{record.msg}"
-            return log_msg
-
-    formatter = CustomFormatter(
-        "%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s"
-    )
-
-    # Set the formatter for both console and file handlers
-    c_handler.setFormatter(formatter)
-    f_handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s"
-        )
-    )
-
-    # Add handlers to the logger
-    logger.addHandler(c_handler)
+    f_formatter = logging.Formatter("%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s")
+    f_handler.setFormatter(f_formatter)
     logger.addHandler(f_handler)
+
+    if not use_curses:
+        # Only add console handler if not in curses mode
+        c_handler = logging.StreamHandler(sys.stdout)
+        c_handler.setLevel(logging.INFO)
+
+        # Define ANSI color codes
+        RESET = "\033[0m"
+        COLOR_MAP = {
+            logging.DEBUG: "\033[34m",    # Blue
+            logging.INFO: "\033[32m",     # Green
+            logging.WARNING: "\033[33m",  # Yellow
+            logging.ERROR: "\033[31m",    # Red
+            logging.CRITICAL: "\033[41m", # Red background
+        }
+
+        class CustomFormatter(logging.Formatter):
+            def format(self, record):
+                record.asctime = self.formatTime(record, self.datefmt)
+                log_color = COLOR_MAP.get(record.levelno, RESET)
+                log_msg = f"{log_color}{record.asctime} - {record.filename} - {record.lineno} - {record.levelname} - {RESET}{record.msg}"
+                return log_msg
+
+        c_formatter = CustomFormatter("%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s")
+        c_handler.setFormatter(c_formatter)
+        logger.addHandler(c_handler)
 
     return logger
 
