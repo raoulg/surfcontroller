@@ -1,9 +1,9 @@
-import argparse
 import csv
 import curses
 import json
 import shutil
 import time
+import subprocess
 from collections import namedtuple
 from pathlib import Path
 
@@ -96,8 +96,11 @@ class Workspace:
             results = []
             Data = namedtuple("Data", ["id", "name", "active", "ip"])
             for result in data["results"]:
-                ip = result['resource_meta']['ip']
-                logger.info(f"IP: {ip}")
+                meta = result["resource_meta"]
+                if "ip" in meta:
+                    ip = meta["ip"]
+                else:
+                    ip = "Not available"
                 results.append(Data(result["id"], result["name"], result["active"], ip))
             return results
         else:
@@ -109,7 +112,11 @@ class Workspace:
             writer = csv.writer(csvfile)
             writer.writerow(["id", "name", "active", "ip"])  # Write header
             for result in data["results"]:
-                ip = result['resource_meta']['ip']
+                meta = result["resource_meta"]
+                if "ip" in meta:
+                    ip = meta["ip"]
+                else:
+                    ip = "Not available"
                 writer.writerow([result["id"], result["name"], result["active"], ip])
 
         logger.info(f"Data successfully saved to {self.OUTPUT_FILE}")
@@ -206,7 +213,7 @@ def main():
     action = Action()
     data = workspace.get_workspaces(save=True)
     logger.info(data)
-    # action("pause", data, [])
+    action("pause", data, [])
 
 
 if __name__ == "__main__":

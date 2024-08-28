@@ -2,6 +2,7 @@ import curses
 import threading
 import time
 from pathlib import Path
+import subprocess
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
@@ -51,13 +52,30 @@ class Controller:
                 0,
                 "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
                 "\n 'a' to select all,\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
-                "\n'l' to toggle logs,\n'q' to quit",
+                "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit",
             )
             if self.show_logs:
                 stdscr.addstr(len(vms) + 12, 0, "===logs===")
                 for idx, log in enumerate(self.logs[-10:]):
                     stdscr.addstr(len(vms) + 13 + idx, 0, log)
             stdscr.refresh()
+
+        def ssh_to_vm(vm):
+            if vm.ip:
+                show_status_message(f"Connecting to {vm.name} at {vm.ip}...")
+                ssh_command = f"ssh {vm.ip}"
+
+                try:
+                    # Use curses.endwin() to temporarily suspend curses
+                    curses.endwin()
+                    subprocess.run(ssh_command, shell=True)
+                except Exception as e:
+                    logger.error(f"SSH connection failed: {str(e)}")
+                finally:
+                    # Reinitialize curses
+                    stdscr.refresh()
+            else:
+                show_status_message(f"No IP address available for {vm.name}")
 
         def show_status_message(message):
             stdscr.addstr(len(vms) + 10, 0, message)
@@ -114,6 +132,14 @@ class Controller:
                 stdscr.refresh()
             elif key == ord("l"):  # Toggle logs
                 self.show_logs = not self.show_logs
+            elif key == ord("s"):  # SSH into selected VM
+                selected_vms = [vm for i, vm in enumerate(vms) if selected[i]]
+                if len(selected_vms) == 1:
+                    ssh_to_vm(selected_vms[0])
+                elif len(selected_vms) > 1:
+                    show_status_message("Please select only one VM for SSH")
+                else:
+                    show_status_message("No VM selected for SSH")
             elif key == ord("q"):  # Quit
                 break
             print_menu()
