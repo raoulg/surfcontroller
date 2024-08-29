@@ -160,9 +160,10 @@ class Controller:
             "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n"
         )
         if self.show_logs:
-            self.stdscr.addstr(len(self.vms) + 12, 0, "===logs===")
+            self.stdscr.addstr(len(self.vms) + 17, 0, "===logs===")
+
             for idx, log in enumerate(self.logs[-10:]):
-                self.stdscr.addstr(len(self.vms) + 13 + idx, 0, log)
+                self.stdscr.addstr(len(self.vms) + 18 + idx, 0, log)
         self.stdscr.refresh()
 
     def show_status_message(self, message) -> None:
