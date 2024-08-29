@@ -7,6 +7,7 @@ from typing import Optional
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
+from surfcontroller import __version__
 
 
 class Controller:
@@ -153,7 +154,8 @@ class Controller:
             "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
             "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
             "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
-            "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit",
+            "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n",
+            f"surfcontroller version {__version__}\n",
         )
         if self.show_logs:
             self.stdscr.addstr(len(self.vms) + 12, 0, "===logs===")
