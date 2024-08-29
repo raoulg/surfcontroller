@@ -63,15 +63,20 @@ surfcontroller
 
 ### 🕹️ Controls
 
+#### navigate / select
 - `j`: Move cursor down
 - `k`: Move cursor up
 - `Enter`: Select/deselect VM
-- `a`: Select all VMs
+- `a`: toggle Select all VMs
+- 'f': toggle Filter VMs (by username)
+- 'n': rename username
+- 'l': toggle view logs
+
+#### Actions
 - `p`: Pause selected VMs
 - `r`: Resume selected VMs
-- `u`: Update VM list
-- `l`: Toggle log view
-- `q`: Quit
+- 'u': Update VM list
+- 's': ssh into selected VM (select just one VM)
 
 ## 📝 Configuration
 
