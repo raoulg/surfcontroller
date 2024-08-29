@@ -2,6 +2,7 @@
 scriptdir = ".surf_controller"
 api-token = "api-token.txt"
 csrf-token = "csrf-token.txt"
+username = "username.txt"
 ids = "output.csv"
 
 [surf]

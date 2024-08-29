@@ -2,10 +2,11 @@ import csv
 import curses
 import json
 import shutil
-import time
 import subprocess
+import time
 from collections import namedtuple
 from pathlib import Path
+from typing import Optional
 
 import requests
 
@@ -75,6 +76,7 @@ class Workspace:
         else:
             logger.warning(f"API token not found at {self.auth_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
+        self.filter = False
 
         # Set up the headers for the request
         self.headers = {
@@ -82,7 +84,9 @@ class Workspace:
             "authorization": self.AUTH_TOKEN,
         }
 
-    def get_workspaces(self, save=False):
+    def get_workspaces(
+        self, save: bool = False, username: Optional[str] = None
+    ) -> list:
         # Make the GET request
         response = requests.get(self.URL, headers=self.headers)
 
@@ -101,11 +105,13 @@ class Workspace:
                     ip = meta["ip"]
                 else:
                     ip = "Not available"
+                if self.filter and username and username not in result["name"]:
+                    continue
                 results.append(Data(result["id"], result["name"], result["active"], ip))
             return results
         else:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
-            return None
+            return []
 
     def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:
@@ -153,6 +159,11 @@ def first_run(stdscr: curses.window):
     if not scriptdir.exists():
         logger.info(f"Creating directory {scriptdir}")
         scriptdir.mkdir()
+
+    username = scriptdir / config["files"]["username"]
+    if not username.exists():
+        USER = get_user_input("Enter your SURF username (lastnameInitialfirstname): ")
+        username.write_text(USER)
 
     # Check and create API token
     if not auth_token_file.exists():

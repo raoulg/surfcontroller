@@ -1,8 +1,9 @@
 import curses
+import subprocess
 import threading
 import time
 from pathlib import Path
-import subprocess
+from typing import Optional
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
@@ -21,19 +22,43 @@ class Controller:
             self.AUTH_TOKEN = self.auth_token_file.read_text().strip()
         else:
             logger.warning(f"API token not found at {self.auth_token_file}")
+        self.usernamefile = self.scriptdir / config["files"]["username"]
+        if self.usernamefile.exists():
+            self.username = self.usernamefile.read_text().strip()
+        else:
+            logger.warning(f"Username not found at {self.usernamefile}")
+            self.username = ""
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.workspace = Workspace()
         self.action = Action()
         self.vms = self.workspace.get_workspaces(save=True)
         self.current_row = 0
         self.selected = [False] * len(self.vms)
-        self.stdscr = None
+
+    def refresh(self) -> None:
+        self.vms = self.workspace.get_workspaces(save=False, username=self.username)
+        self.current_row = 0
+        self.selected = [False] * len(self.vms)
+        self.stdscr.refresh()
+
+    def rename_user(self) -> None:
+        self.stdscr.clear()
+        self.stdscr.addstr(0, 0, f"Current username: {self.username}")
+        self.stdscr.addstr(2, 0, "Enter new username: ")
+        self.stdscr.refresh()
+        curses.echo()
+        new_username = self.stdscr.getstr(2, 20).decode("utf-8")
+        curses.noecho()
+        if new_username:
+            self.username = new_username
+            self.usernamefile.write_text(new_username)
+            self.show_status_message(f"Username updated to: {new_username}")
+        else:
+            self.show_status_message("Username unchanged")
 
     def __call__(self, stdscr):
         self.stdscr = stdscr
         self.stdscr.clear()
-
-
 
         def update_logs():
             while True:
@@ -61,31 +86,35 @@ class Controller:
                     self.selected = [False] * len(self.vms)
                 else:
                     self.selected = [True] * len(self.vms)
+            elif key == ord("f"):  # Filter VMs
+                self.workspace.filter = not self.workspace.filter
+                self.show_status_message(f"Toggle filtering for: {self.username}")
+                self.refresh()
             elif key == ord("u"):  # Update VM list
                 self.show_status_message("Updating VM list...\n")
-                self.vms = self.workspace.get_workspaces(save=False)
                 logger.info("Updated VM list...")
-                self.selected = [False] * len(self.vms)
-                self.stdscr.refresh()
+                self.refresh()
             elif key == ord("p"):
-                idlist = [self.vms[i].name for i in range(len(self.vms)) if self.selected[i]]
+                idlist = [
+                    self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                ]
                 self.show_status_message(f"Pausing {idlist}...\n")
                 self.stdscr.addstr(2, 0, f"Pausing {idlist}")
                 self.action("pause", self.vms, idlist)
-                time.sleep(10)
-                self.vms = self.workspace.get_workspaces(save=False)
-                self.selected = [False] * len(self.vms)
-                self.stdscr.refresh()
+                time.sleep(5)
+                self.refresh()
             elif key == ord("r"):  # Resume selected VMs
-                idlist = [self.vms[i].name for i in range(len(self.vms)) if self.selected[i]]
+                idlist = [
+                    self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                ]
                 logger.info(f"Resuming {idlist}...\n")
-                show_status_message(f"Resuming {idlist}...")
+                self.show_status_message(f"Resuming {idlist}...")
 
                 self.action("resume", self.vms, idlist)
-                time.sleep(10)
-                self.vms = self.workspace.get_workspaces(save=False)
-                self.selected = [False] * len(self.vms)
-                self.stdscr.refresh()
+                time.sleep(5)
+                self.refresh()
+            elif key == ord("n"):  # Rename user
+                self.rename_user()
             elif key == ord("l"):  # Toggle logs
                 self.show_logs = not self.show_logs
             elif key == ord("s"):  # SSH into selected VM
@@ -93,34 +122,37 @@ class Controller:
                 if len(selected_vms) == 1:
                     self.ssh_to_vm(selected_vms[0])
                 elif len(selected_vms) > 1:
-                    show_status_message("Please select only one VM for SSH")
+                    self.show_status_message("Please select only one VM for SSH")
                 else:
-                    show_status_message("No VM selected for SSH")
+                    self.show_status_message("No VM selected for SSH")
             elif key == ord("q"):  # Quit
                 break
             self.print_menu()
 
     def print_menu(self) -> None:
         self.stdscr.clear()
+        idx = 0
         for idx, vm in enumerate(self.vms):
             mark = "[*] " if self.selected[idx] else "[ ] "
             status = "running" if vm.active else "paused"
-            line = (
-                mark + vm.name + f"({status})"
-            )  # Combine the mark and the VM name
+            line = mark + vm.name + f"({status})"  # Combine the mark and the VM name
 
             if idx == self.current_row:
                 self.stdscr.addstr(
                     idx, 0, line, curses.A_REVERSE
                 )  # Highlight the entire line
             else:
-                self.stdscr.addstr(idx, 0, line)  # Display the line without highlighting
+                self.stdscr.addstr(
+                    idx, 0, line
+                )  # Display the line without highlighting
 
         self.stdscr.addstr(
-            idx + 2,
+            len(self.vms) + 2,
             0,
+            f"Username {'(filter)' if self.workspace.filter else ''}: {self.username}\n"
             "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
-            "\n 'a' to select all,\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
+            "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
+            "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
             "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit",
         )
         if self.show_logs:
@@ -130,7 +162,7 @@ class Controller:
         self.stdscr.refresh()
 
     def show_status_message(self, message) -> None:
-        self.stdscr.addstr(len(self.vms) + 12, 0, message)
+        self.stdscr.addstr(len(self.vms) + 1, 0, message)
         self.stdscr.refresh()
         time.sleep(2)  # Show the message for 2 seconds
 
