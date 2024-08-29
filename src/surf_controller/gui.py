@@ -7,7 +7,7 @@ from typing import Optional
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
-from surfcontroller import __version__
+from surf_controller import __version__
 
 
 class Controller:
@@ -147,15 +147,17 @@ class Controller:
                     idx, 0, line
                 )  # Display the line without highlighting
 
+        v = str(__version__)
+
         self.stdscr.addstr(
             len(self.vms) + 2,
             0,
-            f"Username {'(filter)' if self.workspace.filter else ''}: {self.username}\n"
+            f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
+            f" == surfcontroller version {v} ==\n"
             "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
             "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
             "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
-            "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n",
-            f"surfcontroller version {__version__}\n",
+            "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n"
         )
         if self.show_logs:
             self.stdscr.addstr(len(self.vms) + 12, 0, "===logs===")
