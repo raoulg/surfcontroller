@@ -32,7 +32,7 @@ class Controller:
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.workspace = Workspace()
         self.action = Action()
-        self.vms = self.workspace.get_workspaces(save=True)
+        self.vms: list = self.workspace.get_workspaces(save=True)
         self.current_row = 0
         self.selected = [False] * len(self.vms)
 
@@ -173,6 +173,7 @@ class Controller:
 
     def ssh_to_vm(self, vm):
         if vm.ip:
+            logger.info(f"Connecting to {vm.name} at {vm.ip}...")
             self.show_status_message(f"Connecting to {vm.name} at {vm.ip}...")
             ssh_command = f"ssh {vm.ip}"
 
@@ -185,6 +186,7 @@ class Controller:
             finally:
                 # Reinitialize curses
                 self.stdscr.refresh()
+                logger.info("SSH connection closed")
         else:
             self.show_status_message(f"No IP address available for {vm.name}")
 
