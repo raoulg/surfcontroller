@@ -54,6 +54,7 @@ class Controller:
             self.username = new_username
             self.usernamefile.write_text(new_username)
             self.show_status_message(f"Username updated to: {new_username}")
+            logger.info(f"Username updated to: {new_username}")
         else:
             self.show_status_message("Username unchanged")
 
