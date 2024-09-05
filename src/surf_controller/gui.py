@@ -101,7 +101,6 @@ class Controller:
                     self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
                 ]
                 self.show_status_message(f"Pausing {idlist}...\n")
-                self.stdscr.addstr(2, 0, f"Pausing {idlist}")
                 self.action("pause", self.vms, idlist)
                 time.sleep(5)
                 self.refresh()
