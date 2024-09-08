@@ -76,7 +76,7 @@ class Workspace:
         else:
             logger.warning(f"API token not found at {self.auth_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
-        self.filter = False
+        self.filter = True
 
         # Set up the headers for the request
         self.headers = {
