@@ -143,22 +143,29 @@ class Controller:
                     idx, 0, line, curses.A_REVERSE
                 )  # Highlight the entire line
             else:
-                self.stdscr.addstr(
-                    idx, 0, line
-                )  # Display the line without highlighting
+                try:
+                    self.stdscr.addstr(
+                        idx, 0, line
+                    )  # Display the line without highlighting
+                except curses.error as e:
+                    logger.debug(f"Error displaying line {idx}: {line}, {e}")
 
         v = str(__version__)
 
-        self.stdscr.addstr(
-            len(self.vms) + 2,
-            0,
-            f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
-            f" == surfcontroller version {v} ==\n"
-            "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
-            "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
-            "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
-            "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n"
-        )
+        try:
+            self.stdscr.addstr(
+                len(self.vms) + 2,
+                0,
+                f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
+                f" == surfcontroller version {v} ==\n"
+                "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
+                "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
+                "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
+                "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n"
+            )
+        except curses.error as e:
+            logger.debug(f"Error print menu: {e}")
+
         if self.show_logs:
             self.stdscr.addstr(len(self.vms) + 17, 0, "===logs===")
 
