@@ -139,9 +139,12 @@ class Controller:
             line = mark + vm.name + f"({status})"  # Combine the mark and the VM name
 
             if idx == self.current_row:
-                self.stdscr.addstr(
-                    idx, 0, line, curses.A_REVERSE
-                )  # Highlight the entire line
+                try:
+                    self.stdscr.addstr(
+                        idx, 0, line, curses.A_REVERSE
+                    )  # Highlight the entire line
+                except curses.error as e:
+                    logger.debug(f"Error highlighting line {idx}: {line}, {e}")
             else:
                 try:
                     self.stdscr.addstr(
@@ -167,14 +170,20 @@ class Controller:
             logger.debug(f"Error print menu: {e}")
 
         if self.show_logs:
-            self.stdscr.addstr(len(self.vms) + 17, 0, "===logs===")
+            try:
+                self.stdscr.addstr(len(self.vms) + 17, 0, "===logs===")
 
-            for idx, log in enumerate(self.logs[-10:]):
-                self.stdscr.addstr(len(self.vms) + 18 + idx, 0, log)
+                for idx, log in enumerate(self.logs[-10:]):
+                    self.stdscr.addstr(len(self.vms) + 18 + idx, 0, log)
+            except curses.error as e:
+                logger.debug(f"Error displaying logs: {e}")
         self.stdscr.refresh()
 
     def show_status_message(self, message) -> None:
-        self.stdscr.addstr(len(self.vms) + 1, 0, message)
+        try:
+            self.stdscr.addstr(len(self.vms) + 1, 0, message)
+        except curses.error as e:
+            logger.debug(f"Error displaying status message: {e}")
         self.stdscr.refresh()
         time.sleep(2)  # Show the message for 2 seconds
 
