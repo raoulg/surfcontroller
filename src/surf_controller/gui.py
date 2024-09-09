@@ -9,7 +9,6 @@ from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
 from surf_controller import __version__
 
-
 class Controller:
     def __init__(self):
         self.scriptdir = Path.home() / config["files"]["scriptdir"]
@@ -61,6 +60,14 @@ class Controller:
 
     def __call__(self, stdscr):
         self.stdscr = stdscr
+        curses.start_color()
+
+        # Define color pairs: (pair_number, foreground_color, background_color)
+        curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
+        curses.init_pair(2, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        curses.init_pair(3, curses.COLOR_BLUE, curses.COLOR_BLACK)
+        curses.init_pair(4, curses.COLOR_WHITE, curses.COLOR_BLACK)
+
         self.stdscr.clear()
 
         def update_logs():
@@ -180,16 +187,19 @@ class Controller:
             mark = "[*] " if self.selected[idx] else "[ ] "
             status = "running" if vm.active else "paused"
             line = mark + vm.name + f"({status})"
+            colornumber = 1 if vm.active else 4
 
             display_idx = idx - start_index  # Adjust index for display on current page
             if idx == self.current_row:
                 try:
-                    self.stdscr.addstr(display_idx, 0, line, curses.A_REVERSE)
+                    self.stdscr.addstr(display_idx, 0, line, curses.color_pair(2) | curses.A_REVERSE)
+
+                    # self.stdscr.addstr(display_idx, 0, line, curses.A_REVERSE)
                 except curses.error as e:
                     logger.debug(f"Error highlighting line {idx}: {line}, {e}")
             else:
                 try:
-                    self.stdscr.addstr(display_idx, 0, line)
+                    self.stdscr.addstr(display_idx, 0, line, curses.color_pair(colornumber))
                 except curses.error as e:
                     logger.debug(f"Error displaying line {idx}: {line}, {e}")
 

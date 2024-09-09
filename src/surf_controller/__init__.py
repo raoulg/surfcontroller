@@ -20,7 +20,7 @@ def setup_config():
 
 setup_config()
 
-__version__ = "0.3.7"
+__version__ = "0.3.8"
 print(
     f"Welcome to surf_controller version {__version__}"
 )
