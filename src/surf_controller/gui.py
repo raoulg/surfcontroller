@@ -32,7 +32,7 @@ class Controller:
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.workspace = Workspace()
         self.action = Action()
-        self.vms: list = self.workspace.get_workspaces(save=True)
+        self.vms: list = self.workspace.get_workspaces(save=True, username=self.username)
         self.current_row = 0
         self.selected = [False] * len(self.vms)
 
