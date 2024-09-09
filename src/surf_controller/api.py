@@ -69,7 +69,7 @@ class Action:
 class Workspace:
     def __init__(self):
         self.scriptdir = Path.home() / config["files"]["scriptdir"]
-        self.URL = config["surf"]["URL"] + "/?application_type=Compute&deleted=false"
+        self.URL = config["surf"]["URL"] + "/?application_type=Compute&deleted=false&limit=100"
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
             self.AUTH_TOKEN = self.auth_token_file.read_text().strip()
