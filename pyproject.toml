@@ -1,6 +1,6 @@
 [project]
 name = "surf-controller"
-version = "0.3.6"
+version = "0.3.7"
 description = "CLI interface to control SURF VMs"
 authors = [{ name = "Raoul Grouls", email = "Raoul.Grouls@han.nl" }]
 dependencies = ["requests>=2.32.3"]
