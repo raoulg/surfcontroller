@@ -34,6 +34,7 @@ class Controller:
         self.action = Action()
         self.vms: list = self.workspace.get_workspaces(save=True, username=self.username)
         self.current_row = 0
+        self.current_page = 0
         self.selected = [False] * len(self.vms)
 
     def refresh(self) -> None:
@@ -78,9 +79,25 @@ class Controller:
         while True:
             key = self.stdscr.getch()
             if key == ord("j") and self.current_row < len(self.vms) - 1:
-                self.current_row += 1
+                if self.current_row < len(self.vms) - 1:
+                    self.current_row += 1
+                    # Go to the next page if necessary
+                    if self.current_row >= (self.current_page + 1) * self.rows_per_page:
+                        self.current_page += 1
+            elif key == ord("J"):
+                if self.current_page < self.max_pages:
+                    self.current_page += 1
+                    self.current_row = self.current_page * self.rows_per_page
             elif key == ord("k") and self.current_row > 0:
-                self.current_row -= 1
+                if self.current_row > 0:
+                    self.current_row -= 1
+                    # Go to the previous page if necessary
+                    if self.current_row < self.current_page * self.rows_per_page:
+                        self.current_page -= 1
+            elif key == ord("K"):
+                if self.current_page > 0:
+                    self.current_page -= 1
+                    self.current_row = self.current_page * self.rows_per_page
             elif key == ord("\n"):  # Enter key
                 self.selected[self.current_row] = not self.selected[self.current_row]
             elif key == ord("a"):  # Select all
@@ -132,51 +149,65 @@ class Controller:
 
     def print_menu(self) -> None:
         self.stdscr.clear()
-        idx = 0
-        for idx, vm in enumerate(self.vms):
+        v = str(__version__)
+        footlen = 10
+
+        # Calculate the number of rows that can fit on the screen
+        max_y, max_x = self.stdscr.getmaxyx()
+        # Adjust for space taken by logs or footer
+        self.rows_per_page = max_y - footlen - 12 if self.show_logs else max_y - footlen
+        self.max_pages = len(self.vms) // self.rows_per_page
+
+        footer_text = (
+            f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
+            f" == surfcontroller version {v} == Page {self.current_page + 1} of {self.max_pages + 1} ==\n"
+            "Press \n'j' to move down, 'k' to move up,"
+            "'J' to move to next page,'K' to move to previous page,\n"
+            "'Enter' to select,'a' to select all,\n"
+            "'f' to toggle filter,'n' to rename user,\n"
+            "'p' to pause,'r' to resume,'u' to update status,"
+            "'s' for ssh access,\n 'l' to toggle logs,'q' to quit\n"
+        )
+        footlen = len(footer_text.split('\n'))
+
+        # Determine the current page's start and end indices
+        start_index = self.current_page * self.rows_per_page
+        end_index = min(start_index + self.rows_per_page, len(self.vms))
+
+        # Display the VMs for the current page
+        for idx in range(start_index, end_index):
+            vm = self.vms[idx]
             mark = "[*] " if self.selected[idx] else "[ ] "
             status = "running" if vm.active else "paused"
-            line = mark + vm.name + f"({status})"  # Combine the mark and the VM name
+            line = mark + vm.name + f"({status})"
 
+            display_idx = idx - start_index  # Adjust index for display on current page
             if idx == self.current_row:
                 try:
-                    self.stdscr.addstr(
-                        idx, 0, line, curses.A_REVERSE
-                    )  # Highlight the entire line
+                    self.stdscr.addstr(display_idx, 0, line, curses.A_REVERSE)
                 except curses.error as e:
                     logger.debug(f"Error highlighting line {idx}: {line}, {e}")
             else:
                 try:
-                    self.stdscr.addstr(
-                        idx, 0, line
-                    )  # Display the line without highlighting
+                    self.stdscr.addstr(display_idx, 0, line)
                 except curses.error as e:
                     logger.debug(f"Error displaying line {idx}: {line}, {e}")
 
-        v = str(__version__)
-
+        # Display pagination and control information
         try:
-            self.stdscr.addstr(
-                len(self.vms) + 2,
-                0,
-                f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
-                f" == surfcontroller version {v} ==\n"
-                "Press \n'j' to move down,\n 'k' to move up,\n'Enter' to select,"
-                "\n 'a' to select all,\n'f' to toggle filter,\n 'n' to rename user,"
-                "\n 'p' to pause,\n 'r' to resume,\n 'u' to update status,"
-                "\n's' for ssh access,\n 'l' to toggle logs,\n'q' to quit\n"
-            )
+            self.stdscr.addstr(self.rows_per_page, 0, footer_text)
         except curses.error as e:
             logger.debug(f"Error print menu: {e}")
 
+        # Display logs if enabled
         if self.show_logs:
             try:
-                self.stdscr.addstr(len(self.vms) + 17, 0, "===logs===")
-
+                self.stdscr.addstr(max_y - 12, 0, "===logs===")
                 for idx, log in enumerate(self.logs[-10:]):
-                    self.stdscr.addstr(len(self.vms) + 18 + idx, 0, log)
+                    self.stdscr.addstr(max_y - 11 + idx, 0, log)
             except curses.error as e:
                 logger.debug(f"Error displaying logs: {e}")
+
         self.stdscr.refresh()
 
     def show_status_message(self, message) -> None:
