@@ -2,6 +2,7 @@
 
 # Load the API token from the file
 SCRIPTDIR="$HOME/code/surfcontroller"
+EXCLUSIONS_FILE="$SCRIPTDIR/exclusions.json"
 LOG_FILE="$SCRIPTDIR/logs.log"
 API_TOKEN=$(cat "$SCRIPTDIR/api-token.txt")
 CSRF_TOKEN=$(cat "$SCRIPTDIR/csrf-token.txt")
@@ -64,6 +65,24 @@ while IFS=',' read -r ID NAME STATUS; do
 		echo "$TIMESTAMP | $NAME | $ID | $STATUS : Skipping (not in ids)" >>"$LOG_FILE"
 		continue
 	fi
+	   
+	IS_EXCLUDED=false
+    if [ "$ACTION" == "pause" ] && [ -f "$EXCLUSIONS_FILE" ]; then
+        # Using grep (simpler, less robust than jq)
+        # Checks if the ID exists surrounded by quotes in the JSON file
+        if grep -q "\"$ID\"" "$EXCLUSIONS_FILE"; then
+            IS_EXCLUDED=true
+        fi
+        # Alternative using jq (more robust, needs jq installed)
+        # if jq -e --arg id "$ID" '. | index($id) != null' "$EXCLUSIONS_FILE" > /dev/null; then
+        #    IS_EXCLUDED=true
+        # fi
+    fi
+
+	if $IS_EXCLUDED; then
+         echo "$TIMESTAMP | $NAME | $ID | $STATUS : Skipping pause (found in $EXCLUSIONS_FILE)" >> "$LOG_FILE"
+         continue # Skip to the next iteration
+    fi
 
 	# Construct the full URL
 	echo "$TIMESTAMP | $NAME | $ID | $STATUS : ${ACTION}..." >>"$LOG_FILE"
