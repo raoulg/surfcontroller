@@ -3,11 +3,11 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
 from surf_controller import __version__
+
 
 class Controller:
     def __init__(self):
@@ -31,12 +31,16 @@ class Controller:
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.workspace = Workspace()
         self.action = Action()
-        self.vms: list = self.workspace.get_workspaces(save=True, username=self.username)
+        self.vms: list = self.workspace.get_workspaces(
+            save=True, username=self.username
+        )
         self.current_row = 0
         self.current_page = 0
         self.selected = [False] * len(self.vms)
+        self.excluded_ids = self.workspace.load_exclusions()
 
     def refresh(self) -> None:
+        self.excluded_ids = self.workspace.load_exclusions()
         self.vms = self.workspace.get_workspaces(save=False, username=self.username)
         self.current_row = 0
         self.selected = [False] * len(self.vms)
@@ -57,6 +61,33 @@ class Controller:
             logger.info(f"Username updated to: {new_username}")
         else:
             self.show_status_message("Username unchanged")
+
+    def toggle_pause_exclusion(self):
+        if not self.vms:
+            self.show_status_message("No VMs available to pause")
+            return
+        try:
+            current_vm_index = self.current_row
+            vm_to_toggle = self.vms[current_vm_index]
+            vm_id = vm_to_toggle.id
+            new_status = False
+            if vm_id in self.excluded_ids:
+                self.excluded_ids.remove(vm_id)
+                status_msg = f"VM {vm_to_toggle.name} is now included in the pause list"
+            else:
+                self.excluded_ids.add(vm_id)
+                status_msg = (
+                    f"VM {vm_to_toggle.name} is now excluded from the pause list"
+                )
+                new_status = True
+            self.workspace.save_exclusions(self.excluded_ids)
+            self.vms[current_vm_index] = vm_to_toggle._replace(exclude_pause=new_status)
+            self.show_status_message(f"{vm_to_toggle.name} is now {status_msg}")
+        except Exception as e:
+            self.show_status_message(f"An error occurred: {e}")
+            logger.error(
+                f"Error toggling exclusion for VM at row {self.current_row}: {e}"
+            )
 
     def __call__(self, stdscr):
         self.stdscr = stdscr
@@ -140,6 +171,8 @@ class Controller:
                 self.refresh()
             elif key == ord("n"):  # Rename user
                 self.rename_user()
+            elif key == ord("e"):
+                self.toggle_pause_exclusion()
             elif key == ord("l"):  # Toggle logs
                 self.show_logs = not self.show_logs
             elif key == ord("s"):  # SSH into selected VM
@@ -175,7 +208,7 @@ class Controller:
             "'p' to pause,'r' to resume,'u' to update status,"
             "'s' for ssh access,\n 'l' to toggle logs,'q' to quit\n"
         )
-        footlen = len(footer_text.split('\n'))
+        footlen = len(footer_text.split("\n"))
 
         # Determine the current page's start and end indices
         start_index = self.current_page * self.rows_per_page
@@ -192,14 +225,18 @@ class Controller:
             display_idx = idx - start_index  # Adjust index for display on current page
             if idx == self.current_row:
                 try:
-                    self.stdscr.addstr(display_idx, 0, line, curses.color_pair(2) | curses.A_REVERSE)
+                    self.stdscr.addstr(
+                        display_idx, 0, line, curses.color_pair(2) | curses.A_REVERSE
+                    )
 
                     # self.stdscr.addstr(display_idx, 0, line, curses.A_REVERSE)
                 except curses.error as e:
                     logger.debug(f"Error highlighting line {idx}: {line}, {e}")
             else:
                 try:
-                    self.stdscr.addstr(display_idx, 0, line, curses.color_pair(colornumber))
+                    self.stdscr.addstr(
+                        display_idx, 0, line, curses.color_pair(colornumber)
+                    )
                 except curses.error as e:
                     logger.debug(f"Error displaying line {idx}: {line}, {e}")
 

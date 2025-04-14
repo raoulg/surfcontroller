@@ -1,9 +1,8 @@
 import csv
 import curses
-import json
 import shutil
-import subprocess
 import time
+import json
 from collections import namedtuple
 from pathlib import Path
 from typing import Optional
@@ -69,13 +68,16 @@ class Action:
 class Workspace:
     def __init__(self):
         self.scriptdir = Path.home() / config["files"]["scriptdir"]
-        self.URL = config["surf"]["URL"] + "/?application_type=Compute&deleted=false&limit=100"
+        self.URL = (
+            config["surf"]["URL"] + "/?application_type=Compute&deleted=false&limit=100"
+        )
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
             self.AUTH_TOKEN = self.auth_token_file.read_text().strip()
         else:
             logger.warning(f"API token not found at {self.auth_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
+        self.EXCLUSIONS_FILE = self.scriptdir / "exclusions.json"
         self.filter = True
 
         # Set up the headers for the request
@@ -84,10 +86,44 @@ class Workspace:
             "authorization": self.AUTH_TOKEN,
         }
 
+    def load_exclusions(self) -> set:
+        """Loads the set of excluded VM IDs from the JSON file."""
+        if not self.EXCLUSIONS_FILE.exists():
+            return set()
+        try:
+            with self.EXCLUSIONS_FILE.open("r") as f:
+                excluded_ids = json.load(f)
+                if isinstance(excluded_ids, list):
+                    return set(excluded_ids)
+                else:
+                    logger.info(
+                        f"Exclusions file {self.EXCLUSIONS_FILE} does not contain a list. Ignoring."
+                    )
+                    return set()
+        except json.JSONDecodeError:
+            logger.error(
+                f"Error decoding JSON from {self.EXCLUSIONS_FILE}. Treating as empty."
+            )
+            return set()
+        except Exception as e:
+            logger.error(f"Error reading exclusions file {self.EXCLUSIONS_FILE}: {e}")
+            return set()
+
+    def save_exclusions(self, excluded_ids_set: set):
+        """Saves the set of excluded VM IDs to the JSON file."""
+        try:
+            with self.EXCLUSIONS_FILE.open("w") as f:
+                # Convert set back to list for JSON serialization
+                json.dump(list(excluded_ids_set), f, indent=2)
+            logger.info(f"Exclusion list saved to {self.EXCLUSIONS_FILE}")
+        except Exception as e:
+            logger.error(f"Error writing exclusions file {self.EXCLUSIONS_FILE}: {e}")
+
     def get_workspaces(
         self, save: bool = False, username: Optional[str] = None
     ) -> list:
         # Make the GET request
+        excluded_ids_set = self.load_exclusions()
         response = requests.get(self.URL, headers=self.headers)
 
         # Check if the request was successful
@@ -98,7 +134,7 @@ class Workspace:
                 self.save(data)
 
             results = []
-            Data = namedtuple("Data", ["id", "name", "active", "ip"])
+            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause"])
             for result in data["results"]:
                 meta = result["resource_meta"]
                 if "ip" in meta:
@@ -107,7 +143,17 @@ class Workspace:
                     ip = "Not available"
                 if self.filter and username and username not in result["name"]:
                     continue
-                results.append(Data(result["id"], result["name"], result["active"], ip))
+                vm_id = result["id"]
+                exclude_pause_status = vm_id in excluded_ids_set
+                results.append(
+                    Data(
+                        vm_id,
+                        result["name"],
+                        result["active"],
+                        ip,
+                        exclude_pause_status,
+                    )
+                )
             return results
         else:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
@@ -123,7 +169,14 @@ class Workspace:
                     ip = meta["ip"]
                 else:
                     ip = "Not available"
-                writer.writerow([result["id"], result["name"], result["active"], ip])
+                writer.writerow(
+                    [
+                        result["id"],
+                        result["name"],
+                        result["active"],
+                        ip,
+                    ]
+                )
 
         logger.info(f"Data successfully saved to {self.OUTPUT_FILE}")
 
