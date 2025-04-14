@@ -205,7 +205,8 @@ class Controller:
             "'J' to move to next page,'K' to move to previous page,\n"
             "'Enter' to select,'a' to select all,\n"
             "'f' to toggle filter,'n' to rename user,\n"
-            "'p' to pause,'r' to resume,'u' to update status,"
+            "'p' to pause,'r' to resume,'u' to update status,\n"
+            "'e' to toggle pause exclusion,\n"
             "'s' for ssh access,\n 'l' to toggle logs,'q' to quit\n"
         )
         footlen = len(footer_text.split("\n"))
@@ -219,7 +220,10 @@ class Controller:
             vm = self.vms[idx]
             mark = "[*] " if self.selected[idx] else "[ ] "
             status = "running" if vm.active else "paused"
-            line = mark + vm.name + f"({status})"
+            base_line = mark + vm.name + f"({status})"
+            is_excluded = getattr(vm, "exclude_pause", False)
+            exclusion_mark = " [NO PAUSE]" if is_excluded else ""
+            line = base_line + exclusion_mark
             colornumber = 1 if vm.active else 4
 
             display_idx = idx - start_index  # Adjust index for display on current page
