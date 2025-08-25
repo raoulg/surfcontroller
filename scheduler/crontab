@@ -1,0 +1,6 @@
+# scheduler/crontab
+# Run the script every night at 21:00 (9 PM)
+# The script's output is redirected to logs.log inside the volume
+0 21 * * * /bin/bash /app/run.sh >> /app/logs.log 2>&1
+
+# An empty line is required at the end of the file

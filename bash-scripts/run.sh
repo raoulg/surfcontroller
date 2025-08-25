@@ -1,6 +1,6 @@
 #!/bin/bash
 
-SCRIPTDIR="$HOME/code/surfcontroller"
+SCRIPTDIR="/app"
 # Run workspace.sh and wait for it to complete
 $SCRIPTDIR/workspace.sh
 

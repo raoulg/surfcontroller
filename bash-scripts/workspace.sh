@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Define the URL and Authorization token
-SCRIPTDIR="$HOME/code/surfcontroller"
+SCRIPTDIR="/app"
 
 URL="https://gw.live.surfresearchcloud.nl/v1/workspace/workspaces/?application_type=Compute&deleted=false"
 AUTH_TOKEN=$(cat "$SCRIPTDIR/api-token.txt")

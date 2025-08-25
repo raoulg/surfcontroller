@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Load the API token from the file
-SCRIPTDIR="$HOME/code/surfcontroller"
+SCRIPTDIR="/app"
 EXCLUSIONS_FILE="$SCRIPTDIR/exclusions.json"
 LOG_FILE="$SCRIPTDIR/logs.log"
 API_TOKEN=$(cat "$SCRIPTDIR/api-token.txt")
