@@ -1,5 +1,4 @@
 # 🏄‍♂️ Surf Controller
-built with [![Rye](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/ischaojie/7e975b710fd2265b983c051349369881/raw/5cc749c1b94777dc04069668e0c19959bbbd5b46/rye-badge.json)](https://rye-up.com/)
 
 ## 🌊 Overview
 
@@ -15,21 +14,22 @@ Surf Controller is a powerful CLI tool for managing your cloud workspaces with e
 
 ## 🛠️ Installation
 
-Use rye [Rye](https://rye-up.com/) to install surf-controller globally or add it to your local environment. Of course, you can also use pip to install it.
+Use uv to install surf-controller globally or add it to your local environment. Of course, you can also use pip to install it.
+Here are three different commands you could use, the first one (uv tools) is recommended to install it globally.
 
 ```
-rye tools install surf-controller
+uv tools install surf-controller
 ```
 
 ```
-rye add surf-controller
+uv add surf-controller
 ```
 
 ```
 pip install surf-controller
 ```
 
-This installs the `surfcontroller` command.
+These commands all installs the `surfcontroller` command.
 
 
 ## 🔑 First-time Setup
