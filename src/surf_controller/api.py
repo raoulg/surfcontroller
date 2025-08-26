@@ -9,7 +9,8 @@ from typing import Optional
 
 import requests
 
-from surf_controller.utils import config, logger, USER_CONFIG_DIR
+from surf_controller.setup import USER_CONFIG_DIR
+from surf_controller.utils import config, logger
 
 
 class Action:

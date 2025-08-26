@@ -5,7 +5,7 @@ import time
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
-from surf_controller.utils import USER_CONFIG_DIR, LOG_FILE
+from surf_controller.setup import USER_CONFIG_DIR, LOG_FILE
 from surf_controller import __version__
 
 
