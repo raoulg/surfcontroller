@@ -2,17 +2,17 @@ import curses
 import subprocess
 import threading
 import time
-from pathlib import Path
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
+from surf_controller.utils import USER_CONFIG_DIR, LOG_FILE
 from surf_controller import __version__
 
 
 class Controller:
     def __init__(self):
-        self.scriptdir = Path.home() / config["files"]["scriptdir"]
-        self.log_file = self.scriptdir / "logs.log"
+        self.scriptdir = USER_CONFIG_DIR
+        self.log_file = LOG_FILE
         self.show_logs = False
         self.logs = []
         self.log_lock = threading.Lock()

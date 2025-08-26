@@ -9,12 +9,12 @@ from typing import Optional
 
 import requests
 
-from surf_controller.utils import config, logger
+from surf_controller.utils import config, logger, USER_CONFIG_DIR
 
 
 class Action:
     def __init__(self):
-        self.scriptdir = Path.home() / config["files"]["scriptdir"]
+        self.scriptdir = USER_CONFIG_DIR
         self.URL = config["surf"]["URL"]
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
@@ -67,7 +67,7 @@ class Action:
 
 class Workspace:
     def __init__(self):
-        self.scriptdir = Path.home() / config["files"]["scriptdir"]
+        self.scriptdir = USER_CONFIG_DIR
         self.URL = (
             config["surf"]["URL"] + "/?application_type=Compute&deleted=false&limit=100"
         )

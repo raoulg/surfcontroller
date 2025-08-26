@@ -2,14 +2,20 @@ import logging
 import sys
 import tomllib
 from pathlib import Path
+import os
+
+BASE_DIR = Path(os.getenv("SURF_CONTROLLER_CONFIG_DIR", Path.home()))
+USER_CONFIG_DIR = BASE_DIR / ".surf_controller"
+USER_CONFIG_FILE = USER_CONFIG_DIR / "config.toml"
+LOG_FILE = USER_CONFIG_DIR / "logs.log"
 
 
-def get_config(configfile=Path.home() / ".surf_controller/config.toml"):
+def get_config(configfile=USER_CONFIG_FILE):
     with open(configfile, "rb") as f:
         return tomllib.load(f)
 
 
-def setup_logger(log_file=Path.home() / ".surf_controller/logs.log", use_curses=True):
+def setup_logger(log_file=LOG_FILE, use_curses=True):
     """
     Sets up a logger that prints useful information such as filename, line number, and time.
     The logger will save logs to a specified log file, and optionally output to console if not in curses mode.
