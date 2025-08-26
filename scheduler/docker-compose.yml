@@ -1,0 +1,8 @@
+
+services:
+  scheduler:
+    image: raoulgrouls/surf-scheduler:latest
+    container_name: surf-scheduler
+    restart: unless-stopped
+    volumes:
+      - /srv/shared/surf_controller:/data

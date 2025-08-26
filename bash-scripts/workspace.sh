@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # Define the URL and Authorization token
-SCRIPTDIR="/app"
+DATADIR="/data"
 
 URL="https://gw.live.surfresearchcloud.nl/v1/workspace/workspaces/?application_type=Compute&deleted=false"
-AUTH_TOKEN=$(cat "$SCRIPTDIR/api-token.txt")
+AUTH_TOKEN=$(cat "$DATADIR/api-token.txt")
 # Define the output CSV file
-OUTPUT_FILE="$SCRIPTDIR/output.csv"
+OUTPUT_FILE="$DATADIR/output.csv"
 
 # Make the GET request and process the JSON response
 curl -X 'GET' \

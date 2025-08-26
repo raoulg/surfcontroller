@@ -1,11 +1,11 @@
 #!/bin/bash
 
 # Load the API token from the file
-SCRIPTDIR="/app"
-EXCLUSIONS_FILE="$SCRIPTDIR/exclusions.json"
-LOG_FILE="$SCRIPTDIR/logs.log"
-API_TOKEN=$(cat "$SCRIPTDIR/api-token.txt")
-CSRF_TOKEN=$(cat "$SCRIPTDIR/csrf-token.txt")
+DATADIR="/data"
+EXCLUSIONS_FILE="$DATADIR/exclusions.json"
+LOG_FILE="$DATADIR/logs.log"
+API_TOKEN=$(cat "$DATADIR/api-token.txt")
+CSRF_TOKEN=$(cat "$DATADIR/csrf-token.txt")
 
 # URL prefix
 URL_PREFIX="https://gw.live.surfresearchcloud.nl/v1/workspace/workspaces"
@@ -106,6 +106,6 @@ while IFS=',' read -r ID NAME STATUS; do
 	fi
 	sleep 1
 
-done <output.csv
+done < "$DATADIR/output.csv"
 
 echo "Finished ${ACTION_DESCRIPTION} all workspaces"

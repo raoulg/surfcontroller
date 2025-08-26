@@ -14,7 +14,16 @@ Surf Controller is a powerful CLI tool for managing your cloud workspaces with e
 
 ## 🛠️ Installation
 
-Use uv to install surf-controller globally or add it to your local environment. Of course, you can also use pip to install it.
+### config dir
+
+By default, your `~/.surf_controller/` dir will be used for data.
+You can modify this by specifying `SURF_CONTROLLER_CONFIG_DIR` in your env, eg
+```bash
+export SURF_CONTROLLER_CONFIG_DIR=/srv/shared/
+```
+
+### install as tool
+Use [uv](https://docs.astral.sh/uv/concepts/tools/) to install surf-controller globally or add it to your local environment. Of course, you can also use pip to install it.
 Here are three different commands you could use, the first one (uv tools) is recommended to install it globally.
 
 ```
@@ -32,9 +41,9 @@ pip install surf-controller
 These commands all installs the `surfcontroller` command.
 
 
-## 🔑 First-time Setup
+## 🔑 First-time Setup of tokens
 
-You can find the documentation for the API hier: [API Documentation](https://servicedesk.surf.nl/wiki/display/WIKI/SRC+API)
+You can find the SURF API documentation here: [API Documentation](https://servicedesk.surf.nl/wiki/display/WIKI/SRC+API)
 
 On your [profile](https://portal.live.surfresearchcloud.nl/profile) you can create your own API token.
 
@@ -50,9 +59,9 @@ surfcontroller
 
 On first run, Surf Controller will:
 
-1. 📁 Create a configuration directory in your home folder
-2. 📄 Copy a default configuration file
-3. 🔒 Prompt you for API and CSRF tokens
+1. 📁 Create a configuration directory in your SURF_CONTROLLER_CONFIG_DIR folder (defaults to ~)
+2. 📄 Copy a default configuration file into your configdir
+3. 🔒 Prompt you for API and CSRF tokens and stores them in your configdir
 
 ## 🎮 Usage
 
@@ -75,8 +84,11 @@ surfcontroller
 #### Actions
 - `p`: Pause selected VMs
 - `r`: Resume selected VMs
+- `e`: add VM to exclusion list
 - 'u': Update VM list
 - 's': ssh into selected VM (select just one VM)
+
+Note that adding to the exclusion list only adds the id of the vm to `exclusions.json`. The actual shutting down of the VM is done from a VM we control on the Surf cloud, so toggling this on your computer doesnt impact the actual pausing at 21:00.
 
 ## 📝 Configuration
 

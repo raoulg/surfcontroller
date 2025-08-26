@@ -1,10 +1,12 @@
 import shutil
 from pathlib import Path
+import os
 
 
 def setup_config():
     # Define the user's config directory
-    user_config_dir = Path.home() / ".surf_controller"
+    base_dir = Path(os.getenv("SURF_CONTROLLER_CONFIG_DIR", Path.home()))
+    user_config_dir = base_dir / ".surf_controller"
     user_config_file = user_config_dir / "config.toml"
 
     # Create the directory if it doesn't exist
@@ -20,5 +22,5 @@ def setup_config():
 
 setup_config()
 
-__version__ = "0.3.9"
+__version__ = "0.4"
 print(f"Welcome to surf_controller version {__version__}")
