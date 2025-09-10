@@ -22,8 +22,13 @@ You can modify this by specifying `SURF_CONTROLLER_CONFIG_DIR` in your env, eg
 export SURF_CONTROLLER_CONFIG_DIR=/srv/shared/
 ```
 
+You can do this for the server for all users with
+```bash
+sudo vim /etc/profile.d/shared_env.sh
+```
+
 ### install as tool
-Use [uv](https://docs.astral.sh/uv/concepts/tools/) to install surf-controller globally or add it to your local environment. Of course, you can also use pip to install it.
+Use [uv](https://docs.astral.sh/uv/concepts/tools/) to install surf-controller globally or add it to your local environment. You can install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` . Of course, you can also use pip to install it (but then you might also need to install python etc, something uv also takes care of).
 Here are three different commands you could use, the first one (uv tools) is recommended to install it globally.
 
 ```
