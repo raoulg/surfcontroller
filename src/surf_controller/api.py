@@ -183,7 +183,7 @@ class Workspace:
 
 
 def first_run(stdscr: curses.window):
-    scriptdir = Path.home() / config["files"]["scriptdir"]
+    scriptdir = USER_CONFIG_DIR
     if not scriptdir.exists():
         logger.info(f"Creating directory {scriptdir}")
         scriptdir.mkdir(parents=True)
