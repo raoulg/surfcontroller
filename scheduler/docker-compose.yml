@@ -5,4 +5,4 @@ services:
     container_name: surf-scheduler
     restart: unless-stopped
     volumes:
-      - /srv/shared/surf_controller:/data
+      - /srv/shared/.surf_controller:/data
