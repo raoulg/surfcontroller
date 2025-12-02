@@ -57,6 +57,7 @@ class Controller:
 
         self.active_filters = set()
         self.show_filter_input = False
+        self.filter_running = False
 
         # Status
         self.status_message = ""
@@ -77,6 +78,10 @@ class Controller:
         # Apply username filter if enabled (legacy filter)
         if self.workspace.filter and self.username:
              self.vms = [vm for vm in self.vms if self.username in vm.name]
+             
+        # Apply running filter
+        if self.filter_running:
+            self.vms = [vm for vm in self.vms if vm.active]
 
     def refresh(self) -> None:
         self.excluded_ids = self.workspace.load_exclusions()
@@ -127,6 +132,24 @@ class Controller:
         else:
             self.show_status_message("Username unchanged")
 
+    def draw_progress_bar(self, current, total, y_pos):
+        height, width = self.stdscr.getmaxyx()
+        bar_width = width - 10
+        if bar_width < 10: bar_width = 10
+        
+        percent = current / total
+        filled_len = int(bar_width * percent)
+        
+        # Thicker style
+        bar = "#" * filled_len + "-" * (bar_width - filled_len)
+        percent_str = f"{percent*100:.0f}%"
+        
+        try:
+            self.stdscr.addstr(y_pos, 0, f"[{bar}] {percent_str}")
+            self.stdscr.refresh()
+        except curses.error:
+            pass
+
     def batch_update_end_date(self):
         selected_indices = [i for i, s in enumerate(self.selected) if s]
         if not selected_indices:
@@ -147,34 +170,43 @@ class Controller:
 
         try:
             from datetime import datetime
-            # Parse dd-mm-yyyy
             dt = datetime.strptime(date_str, "%d-%m-%Y")
-            
-            # Check if in past (compare date only)
             now = datetime.now()
             if dt.date() < now.date():
                 self.show_status_message("Error: Date cannot be in the past")
                 self.refresh()
                 return
             
-            # Set to end of day? User example showed specific time. 
-            # Let's set to 23:59:59 to be safe "until that day"
             dt = dt.replace(hour=23, minute=59, second=59)
-            
-            # Format to ISO 8601: YYYY-MM-DDTHH:MM:SSZ
             iso_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
             
-            self.show_status_message(f"Updating {len(selected_indices)} VMs...")
+            self.stdscr.clear()
+            self.stdscr.addstr(0, 0, f"Updating {len(selected_indices)} VMs...")
+            self.stdscr.refresh()
             
             success_count = 0
-            for idx in selected_indices:
-                vm = self.vms[idx]
-                if self.workspace.update_workspace(vm.id, {"end_time": iso_date}):
-                    success_count += 1
-                    # Optimistic update
-                    self.update_single_vm(vm.id)
+            total = len(selected_indices)
             
-            self.show_status_message(f"Updated {success_count}/{len(selected_indices)} VMs")
+            for i, idx in enumerate(selected_indices):
+                vm = self.vms[idx]
+                self.stdscr.addstr(2 + i, 0, f"Updating {vm.name}...")
+                self.stdscr.refresh()
+                
+                if self.workspace.update_workspace(vm.id, {"end_time": iso_date}):
+                    self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
+                    success_count += 1
+                    # Removed redundant update_single_vm to prevent glitches and speed up
+                else:
+                    self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
+                
+                self.draw_progress_bar(i + 1, total, 2 + total + 1)
+            
+            self.stdscr.addstr(2 + total + 3, 0, f"Finished. Updated {success_count}/{total}. Press any key to continue.")
+            self.stdscr.getch()
+            
+            # Auto-refresh
+            self.fetch_all()
+            self.show_status_message(f"Updated {success_count} VMs")
             
         except ValueError:
             self.show_status_message("Error: Invalid date format. Use dd-mm-yyyy")
@@ -184,50 +216,54 @@ class Controller:
         
         self.refresh()
 
-    def toggle_pause_exclusion(self):
-        if not self.vms:
-            self.show_status_message("No VMs available to pause")
+    def delete_selected_vms(self):
+        selected_indices = [i for i, s in enumerate(self.selected) if s]
+        if not selected_indices:
+            self.show_status_message("No VMs selected for deletion")
             return
-        try:
-            current_vm_index = self.current_row
-            vm_to_toggle = self.vms[current_vm_index]
-            vm_id = vm_to_toggle.id
-            new_status = False
-            if vm_id in self.excluded_ids:
-                self.excluded_ids.remove(vm_id)
-                status_msg = f"VM {vm_to_toggle.name} is now included in the pause list"
-            else:
-                self.excluded_ids.add(vm_id)
-                status_msg = (
-                    f"VM {vm_to_toggle.name} is now excluded from the pause list"
-                )
-                new_status = True
-            self.workspace.save_exclusions(self.excluded_ids)
-            self.vms[current_vm_index] = vm_to_toggle._replace(exclude_pause=new_status)
-            self.show_status_message(f"{vm_to_toggle.name} is now {status_msg}")
-        except Exception as e:
-            self.show_status_message(f"An error occurred: {e}")
-            logger.error(
-                f"Error toggling exclusion for VM at row {self.current_row}: {e}"
-            )
 
-    def add_custom_filter(self):
+        # Confirmation Dialog
         self.stdscr.clear()
-        self.stdscr.addstr(0, 0, "Enter filter string: ")
-        curses.echo()
-        f = self.stdscr.getstr(0, 21).decode("utf-8")
-        curses.noecho()
-        if f:
-            if f not in self.custom_filters:
-                self.custom_filters.append(f)
-                try:
-                    with open(self.FILTERS_FILE, "w") as file:
-                        json.dump(self.custom_filters, file)
-                except Exception as e:
-                    logger.error(f"Failed to save filters: {e}")
+        self.stdscr.addstr(2, 0, f"WARNING: You are about to DELETE {len(selected_indices)} VMs!", curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.addstr(4, 0, "This action is IRREVERSIBLE.")
+        self.stdscr.addstr(6, 0, "Are you sure? (y/n): ")
+        self.stdscr.refresh()
+        
+        while True:
+            key = self.stdscr.getch()
+            if key == ord('y') or key == ord('Y'):
+                break
+            elif key == ord('n') or key == ord('N') or key == 27: # Esc
+                self.show_status_message("Deletion cancelled")
+                self.refresh()
+                return
+        
+        self.stdscr.clear()
+        self.stdscr.addstr(0, 0, f"Deleting {len(selected_indices)} VMs...")
+        self.stdscr.refresh()
+        
+        success_count = 0
+        total = len(selected_indices)
+        
+        for i, idx in enumerate(selected_indices):
+            vm = self.vms[idx]
+            self.stdscr.addstr(2 + i, 0, f"Deleting {vm.name}...")
+            self.stdscr.refresh()
             
-            self.active_filters.add(f)
-            self.refresh()
+            if self.workspace.delete_workspace(vm.id):
+                self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
+                success_count += 1
+            else:
+                self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
+            
+            self.draw_progress_bar(i + 1, total, 2 + total + 1)
+            
+        self.stdscr.addstr(2 + total + 3, 0, f"Finished. Deleted {success_count}/{total}. Press any key to continue.")
+        self.stdscr.getch()
+        
+        # Refresh list
+        self.fetch_all()
+        self.show_status_message(f"Deleted {success_count} VMs")
 
     def __call__(self, stdscr):
         self.stdscr = stdscr
@@ -286,6 +322,10 @@ class Controller:
             elif key == ord("f"):  # Filter VMs (User)
                 self.workspace.filter = not self.workspace.filter
                 self.show_status_message(f"Toggle user filtering: {self.workspace.filter}")
+                self.refresh()
+            elif key == ord("R"): # Filter Running
+                self.filter_running = not self.filter_running
+                self.show_status_message(f"Toggle running filter: {self.filter_running}")
                 self.refresh()
             
             # Filter Keys (Dynamic 1-9)
@@ -347,6 +387,10 @@ class Controller:
                 self.toggle_pause_exclusion()
             elif key == ord("e"): # e for end date update
                 self.batch_update_end_date()
+            elif key == ord("c"): # c for creation wizard
+                self.start_creation_wizard()
+            elif key == ord("d"): # d for delete
+                self.delete_selected_vms()
             elif key == ord("l"):  # Toggle logs
                 self.show_logs = not self.show_logs
             elif key == ord("s"):  # SSH into selected VM
@@ -409,6 +453,9 @@ class Controller:
             current_x += len(filter_str)
             
         self.stdscr.addstr(4, current_x, "[+] Add Filter", curses.color_pair(4))
+        
+        if self.filter_running:
+             self.stdscr.addstr(4, current_x + 15, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
 
         self.stdscr.hline(list_start_y - 1, 0, curses.ACS_HLINE, max_x)
 
@@ -478,19 +525,42 @@ class Controller:
         self.stdscr.hline(footer_y - 1, 0, curses.ACS_HLINE, max_x)
         
         commands = [
-            "j/k: Move", "Space/Enter: Select", "a: Select All",
+            "j/k: Move", "J/K: Page", "Space/Enter: Select", "a: Select All",
             "p: Pause", "r: Resume", "u: Update",
             f"1-{len(all_filters)}: Toggle Filters", "+: Add Filter",
             "f: Toggle User Filter", "n: Rename User", "e: End Date", "E: Exclude",
-            "s: SSH", "l: Logs", "q: Quit"
+            "c: Create VMs", "d: Delete VMs", "R: Running Only", "s: SSH", "l: Logs", "q: Quit"
         ]
         
         command_str = " | ".join(commands)
-        # Wrap commands if needed
-        self.stdscr.addstr(footer_y, 0, command_str[:max_x])
+        
+        # Auto-wrap logic
+        current_line = ""
+        line_idx = 0
+        separator = " | "
+        
+        for cmd in commands:
+            # Check if adding the next command would exceed the width
+            if len(current_line) + len(separator) + len(cmd) < max_x:
+                if current_line:
+                    current_line += separator
+                current_line += cmd
+            else:
+                # Print current line and start a new one
+                self.stdscr.addstr(footer_y + line_idx, 0, current_line)
+                line_idx += 1
+                current_line = cmd
+                # Stop if we run out of vertical space (reserve 1 line for page info)
+                if line_idx >= footer_height - 1:
+                    break 
+        
+        # Print the last line of commands
+        if current_line and line_idx < footer_height - 1:
+             self.stdscr.addstr(footer_y + line_idx, 0, current_line)
+             line_idx += 1
         
         page_info = f"Page {self.current_page + 1}/{self.max_pages + 1}"
-        self.stdscr.addstr(footer_y + 1, 0, page_info)
+        self.stdscr.addstr(footer_y + line_idx, 0, page_info)
 
         # Display logs if enabled
         if self.show_logs:
@@ -534,6 +604,292 @@ class Controller:
                 logger.info("SSH connection closed")
         else:
             self.show_status_message(f"No IP address available for {vm.name}")
+
+    def start_creation_wizard(self):
+        wizard = CreationWizard(self.stdscr, self.workspace, self.scriptdir)
+        wizard.run()
+        self.refresh()
+
+
+class CreationWizard:
+    def __init__(self, stdscr, workspace, scriptdir):
+        self.stdscr = stdscr
+        self.workspace = workspace
+        self.scriptdir = scriptdir
+        self.step = 0
+        self.users_file = None
+        self.template_file = None
+        self.project_prefix = ""
+        self.end_date = ""
+        self.parsed_users = []
+        self.template_data = {}
+
+    def run(self):
+        while True:
+            self.stdscr.clear()
+            height, width = self.stdscr.getmaxyx()
+            
+            # Title
+            title = "Bulk VM Creation Wizard"
+            self.stdscr.addstr(0, 0, title, curses.A_BOLD)
+            self.stdscr.hline(1, 0, curses.ACS_HLINE, width)
+            
+            action = None
+            if self.step == 0:
+                action = self.step_select_user_file(height, width)
+            elif self.step == 1:
+                action = self.step_select_template_file(height, width)
+            elif self.step == 2:
+                action = self.step_options(height, width)
+            elif self.step == 3:
+                action = self.step_review(height, width)
+            elif self.step == 4:
+                action = self.step_creation(height, width)
+                break # Exit after creation
+            
+            if action == 'quit' or self.step == -1:
+                break
+            
+    def step_select_user_file(self, height, width):
+        self.stdscr.addstr(2, 0, "Step 1: Select User File (users/)")
+        
+        users_dir = self.scriptdir.parent.parent / "users" # Assuming structure
+        # Better: use config or relative path from cwd
+        # User said "users/" folder. Let's assume it's in CWD or project root.
+        # scriptdir is USER_CONFIG_DIR. 
+        # Let's try CWD/users first
+        import os
+        cwd = os.getcwd()
+        users_path = os.path.join(cwd, "users")
+        
+        if not os.path.exists(users_path):
+             self.stdscr.addstr(4, 0, f"Error: 'users' directory not found at {users_path}")
+             self.stdscr.addstr(6, 0, "Press any key to exit...")
+             self.stdscr.getch()
+             self.step = -1 # Exit
+             return 'quit'
+
+        files = [f for f in os.listdir(users_path) if f.endswith(".txt")]
+        
+        if not files:
+            self.stdscr.addstr(4, 0, "No .txt files found in users/")
+            self.stdscr.getch()
+            self.step = -1
+            return 'quit'
+            
+        current_selection = 0
+        
+        while True:
+            for idx, f in enumerate(files):
+                if idx == current_selection:
+                    self.stdscr.addstr(4 + idx, 0, f"> {f}", curses.A_REVERSE)
+                else:
+                    self.stdscr.addstr(4 + idx, 0, f"  {f}")
+            
+            # Preview content
+            preview_y = 4
+            preview_x = 40
+            
+            # Clear preview area
+            for i in range(height - preview_y - 2):
+                self.stdscr.move(preview_y + i, preview_x)
+                self.stdscr.clrtoeol()
+
+            self.stdscr.addstr(preview_y - 1, preview_x, "File Content Preview:")
+            try:
+                with open(os.path.join(users_path, files[current_selection]), "r") as f:
+                    lines = f.readlines()[:20] # Show more lines
+                    for i, line in enumerate(lines):
+                        if preview_y + i < height - 2:
+                            self.stdscr.addstr(preview_y + i, preview_x, line.strip()[:40])
+            except:
+                pass
+
+            self.stdscr.addstr(height - 2, 0, "UP/DOWN/j/k: Select | ENTER: Confirm | q: Quit")
+            
+            key = self.stdscr.getch()
+            if key == ord('q'):
+                self.step = -1 # Exit loop in run() needs to handle this
+                return 'quit'
+            elif (key == curses.KEY_UP or key == ord('k')) and current_selection > 0:
+                current_selection -= 1
+            elif (key == curses.KEY_DOWN or key == ord('j')) and current_selection < len(files) - 1:
+                current_selection += 1
+            elif key == ord('\n'):
+                self.users_file = os.path.join(users_path, files[current_selection])
+                self.step += 1
+                return 'next'
+    
+    def step_select_template_file(self, height, width):
+        self.stdscr.addstr(2, 0, "Step 2: Select Template File (templates/)")
+        
+        import os
+        cwd = os.getcwd()
+        templates_path = os.path.join(cwd, "templates")
+        
+        files = [f for f in os.listdir(templates_path) if f.endswith(".json")]
+        
+        current_selection = 0
+        
+        while True:
+            for idx, f in enumerate(files):
+                if idx == current_selection:
+                    self.stdscr.addstr(4 + idx, 0, f"> {f}", curses.A_REVERSE)
+                else:
+                    self.stdscr.addstr(4 + idx, 0, f"  {f}")
+            
+            # Preview content
+            preview_y = 4
+            preview_x = 40
+            
+            # Clear preview area
+            for i in range(height - preview_y - 2):
+                self.stdscr.move(preview_y + i, preview_x)
+                self.stdscr.clrtoeol()
+
+            self.stdscr.addstr(preview_y - 1, preview_x, "Template Preview:")
+            try:
+                with open(os.path.join(templates_path, files[current_selection]), "r") as f:
+                    lines = f.readlines()[:20]
+                    for i, line in enumerate(lines):
+                        if preview_y + i < height - 2:
+                            self.stdscr.addstr(preview_y + i, preview_x, line.strip()[:40])
+            except:
+                pass
+
+            self.stdscr.addstr(height - 2, 0, "UP/DOWN/j/k: Select | ENTER: Confirm | b: Back | q: Quit")
+            
+            key = self.stdscr.getch()
+            if key == ord('q'):
+                self.step = -1
+                return 'quit'
+            elif key == ord('b'):
+                self.step -= 1
+                return 'back'
+            elif (key == curses.KEY_UP or key == ord('k')) and current_selection > 0:
+                current_selection -= 1
+            elif (key == curses.KEY_DOWN or key == ord('j')) and current_selection < len(files) - 1:
+                current_selection += 1
+            elif key == ord('\n'):
+                self.template_file = os.path.join(templates_path, files[current_selection])
+                self.step += 1
+                return 'next'
+
+    def step_options(self, height, width):
+        self.stdscr.addstr(2, 0, "Step 3: Options")
+        
+        curses.echo()
+        self.stdscr.addstr(4, 0, "Enter Project Prefix (e.g. UOS2): ")
+        if self.project_prefix:
+             self.stdscr.addstr(4, 34, self.project_prefix)
+        else:
+             self.project_prefix = self.stdscr.getstr(4, 34).decode("utf-8")
+        
+        self.stdscr.addstr(6, 0, "Enter End Date (dd-mm-yyyy): ")
+        if self.end_date:
+             self.stdscr.addstr(6, 29, self.end_date)
+        else:
+             self.end_date = self.stdscr.getstr(6, 29).decode("utf-8")
+        curses.noecho()
+        
+        self.stdscr.addstr(height - 2, 0, "ENTER: Confirm | b: Back | q: Quit")
+        
+        # Validate date
+        try:
+            from datetime import datetime
+            datetime.strptime(self.end_date, "%d-%m-%Y")
+        except ValueError:
+            self.stdscr.addstr(8, 0, "Invalid date format!", curses.color_pair(1))
+            self.end_date = "" # Reset
+            self.stdscr.getch()
+            return 'retry'
+
+        key = self.stdscr.getch()
+        if key == ord('q'):
+            self.step = -1
+            return 'quit'
+        elif key == ord('b'):
+            self.project_prefix = "" # Reset for re-entry
+            self.end_date = ""
+            self.step -= 1
+            return 'back'
+        elif key == ord('\n'):
+            self.step += 1
+            return 'next'
+
+    def step_review(self, height, width):
+        self.stdscr.addstr(2, 0, "Step 4: Review")
+        
+        self.stdscr.addstr(4, 0, f"User File: {self.users_file}")
+        self.stdscr.addstr(5, 0, f"Template: {self.template_file}")
+        self.stdscr.addstr(6, 0, f"Project: {self.project_prefix}")
+        self.stdscr.addstr(7, 0, f"End Date: {self.end_date}")
+        
+        # Parse users and show count
+        with open(self.users_file, 'r') as f:
+            self.parsed_users = [line.strip() for line in f if line.strip()]
+            
+        self.stdscr.addstr(9, 0, f"Total VMs to create: {len(self.parsed_users)}")
+        
+        self.stdscr.addstr(height - 2, 0, "ENTER: Create VMs | b: Back | q: Quit")
+        
+        key = self.stdscr.getch()
+        if key == ord('q'):
+            self.step = -1
+            return 'quit'
+        elif key == ord('b'):
+            self.step -= 1
+            return 'back'
+        elif key == ord('\n'):
+            self.step += 1
+            return 'next'
+
+    def step_creation(self, height, width):
+        self.stdscr.addstr(2, 0, "Creating VMs...")
+        
+        import json
+        from datetime import datetime
+        
+        with open(self.template_file, 'r') as f:
+            template = json.load(f)
+            
+        # Parse date
+        dt = datetime.strptime(self.end_date, "%d-%m-%Y")
+        dt = dt.replace(hour=23, minute=59, second=59)
+        iso_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        success_count = 0
+        total = len(self.parsed_users)
+        
+        for idx, email in enumerate(self.parsed_users):
+            username = email.split('@')[0].replace('.', '')
+            
+            # Name: PROJECT-USERNAME
+            vm_name = f"{self.project_prefix}-{username}"
+            
+            # Hostname: projectusername (lowercase)
+            hostname = f"{self.project_prefix}{username}".lower()
+            
+            # Prepare data
+            data = template.copy()
+            data['name'] = vm_name
+            data['end_time'] = iso_date
+            if 'meta' in data:
+                data['meta']['host_name'] = hostname
+            
+            self.stdscr.addstr(4 + idx, 0, f"Creating {vm_name}...")
+            self.stdscr.refresh()
+            
+            if self.workspace.create_workspace(data):
+                self.stdscr.addstr(4 + idx, 40, "OK", curses.color_pair(2))
+                success_count += 1
+            else:
+                self.stdscr.addstr(4 + idx, 40, "FAILED", curses.color_pair(1))
+            
+            self.stdscr.refresh()
+            
+        self.stdscr.addstr(height - 2, 0, f"Finished. Created {success_count}/{total}. Press any key to exit.")
+        self.stdscr.getch()
 
 
 def main():

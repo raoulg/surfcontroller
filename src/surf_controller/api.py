@@ -204,6 +204,36 @@ class Workspace:
             logger.error(f"Failed to update workspace {vm_id}. Status: {response.status_code}, Response: {response.text}")
             return False
 
+    def create_workspace(self, data: dict) -> bool:
+        """Creates a new workspace."""
+        url = f"{config['surf']['URL']}/"
+        response = requests.post(url, headers=self.headers, json=data)
+        
+        if response.status_code == 201: # Assuming 201 Created
+            logger.info("Successfully created workspace")
+            return True
+        elif response.status_code == 200: # Sometimes APIs return 200
+            logger.info("Successfully created workspace (200)")
+            return True
+        else:
+            logger.error(f"Failed to create workspace. Status: {response.status_code}, Response: {response.text}")
+            return False
+
+    def delete_workspace(self, vm_id: str) -> bool:
+        """Deletes a workspace by ID."""
+        url = f"{config['surf']['URL']}/{vm_id}/"
+        response = requests.delete(url, headers=self.headers)
+        
+        if response.status_code == 204: # No Content usually means success for DELETE
+            logger.info(f"Successfully deleted workspace {vm_id}")
+            return True
+        elif response.status_code == 200:
+            logger.info(f"Successfully deleted workspace {vm_id} (200)")
+            return True
+        else:
+            logger.error(f"Failed to delete workspace {vm_id}. Status: {response.status_code}, Response: {response.text}")
+            return False
+
     def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:
             writer = csv.writer(csvfile)
