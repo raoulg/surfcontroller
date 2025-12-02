@@ -16,5 +16,7 @@ csrf-token.txt
 *.log
 *.csv
 .DS_Store
-templates/
+
 users/
+templates/
+.env

@@ -80,18 +80,37 @@ surfcontroller
 #### navigate / select
 - `j`: Move cursor down
 - `k`: Move cursor up
+- `J`: Next page
+- `K`: Previous page
 - `Enter`: Select/deselect VM
 - `a`: toggle Select all VMs
-- 'f': toggle Filter VMs (by username)
-- 'n': rename username
-- 'l': toggle view logs
+- `f`: toggle Filter VMs (by username)
+- `R`: toggle Filter Running VMs (show only running)
+- `1-9`: Toggle custom filters
+- `+`: Add custom filter
+- `n`: rename username
+- `l`: toggle view logs
 
 #### Actions
 - `p`: Pause selected VMs
 - `r`: Resume selected VMs
-- `e`: add VM to exclusion list
-- 'u': Update VM list
-- 's': ssh into selected VM (select just one VM)
+- `e`: Batch update End Date for selected VMs
+- `E`: Toggle Pause Exclusion (Shift+e)
+- `c`: Bulk Create VMs (Wizard)
+- `d`: Bulk Delete selected VMs (with confirmation)
+- `u`: Update VM list
+- `s`: ssh into selected VM (select just one VM)
+
+### ✨ New in v1.0
+- **Bulk Creation Wizard**: Press `c` to launch a step-by-step wizard for creating multiple VMs from a user list and template.
+- **Bulk Deletion**: Press `d` to delete multiple VMs at once. Includes a safety confirmation dialog.
+- **Batch End Date Update**: Press `e` to update the expiration date for multiple VMs simultaneously.
+- **Running Filter**: Press `R` to quickly see only your running VMs.
+- **UI Improvements**:
+    - **Progress Bars**: Visual progress tracking for batch operations.
+    - **Status Indicators**: Clear "OK" (Green) or "FAILED" (Red) status for actions.
+    - **Responsive Footer**: Command bar adapts to screen width.
+    - **Persistent Filters**: Custom filters are saved between sessions.
 
 Note that adding to the exclusion list only adds the id of the vm to `exclusions.json`. The actual shutting down of the VM is done from a VM we control on the Surf cloud, so toggling this on your computer doesnt impact the actual pausing at 21:00.
 
@@ -109,3 +128,30 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 🙏 Acknowledgments
 
 - Thanks to https://claude.ai/ for help with the curses implementation
+
+## 📅 Scheduler & Web GUI
+
+The project includes a Docker-based scheduler for automating nightly VM pauses and managing exclusions via a Web GUI.
+
+### Setup
+
+1.  Navigate to the `scheduler/` directory:
+    ```bash
+    cd scheduler
+    ```
+2.  Create a `.env` file from the sample:
+    ```bash
+    cp .env.sample .env
+    ```
+    Edit `.env` to set your desired `WEB_USERNAME` and `WEB_PASSWORD`.
+3.  Start the scheduler:
+    ```bash
+    docker-compose up -d --build
+    ```
+
+### How it works
+
+- **Web GUI**: Accessible at `http://localhost:5001`. Use it to view VM status, toggle exclusions, and manually trigger the pause job.
+- **Nightly Job**: A cron job runs every night at 21:00 to pause all non-excluded VMs.
+- **Configuration**: The scheduler mounts your local `~/.surf_controller` directory, so it shares the same tokens and exclusions as the CLI tool.
+- **Installation**: The Docker image installs the `surf-controller` package directly from the source code in the parent directory, ensuring it always runs the latest version of your code.
