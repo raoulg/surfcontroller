@@ -1,0 +1,15 @@
+services:
+  scheduler:
+    image: raoulgrouls/surf-scheduler:latest
+    container_name: surf-scheduler
+    restart: unless-stopped
+    ports:
+      - "5001:5000" # Expose Web GUI on host port 5001
+    volumes:
+      # Map the host's config dir to the container's expected location
+      # Ensure this directory exists on the remote machine and contains api-token.txt, etc.
+      - /srv/shared/.surf_controller:/config/.surf_controller
+    environment:
+      - WEB_USERNAME=${WEB_USERNAME:-admin}
+      - WEB_PASSWORD=${WEB_PASSWORD:-password}
+      - SURF_CONTROLLER_CONFIG_DIR=/config

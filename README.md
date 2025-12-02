@@ -155,3 +155,15 @@ The project includes a Docker-based scheduler for automating nightly VM pauses a
 - **Nightly Job**: A cron job runs every night at 21:00 to pause all non-excluded VMs.
 - **Configuration**: The scheduler mounts your local `~/.surf_controller` directory, so it shares the same tokens and exclusions as the CLI tool.
 - **Installation**: The Docker image installs the `surf-controller` package directly from the source code in the parent directory, ensuring it always runs the latest version of your code.
+
+### 🚀 Deployment
+
+To deploy the scheduler to a remote machine:
+
+- Copy `scheduler/docker-compose.deploy.yml` to the remote server (e.g., as `docker-compose.yml`).
+- Ensure the config directory exists (e.g., `/srv/shared/.surf_controller`) and contains your tokens.
+- Run:
+    ```bash
+    docker-compose up -d
+    ```
+
