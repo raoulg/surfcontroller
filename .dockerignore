@@ -4,3 +4,11 @@ __pycache__/
 .venv/
 dist/
 *.egg-info/
+api-token.txt
+csrf-token.txt
+config.toml
+.env
+users/
+templates/
+scheduler/config/
+scheduler/.env

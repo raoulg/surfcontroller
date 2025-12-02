@@ -1,8 +1,14 @@
-
 services:
   scheduler:
-    image: raoulgrouls/surf-scheduler:latest
-    container_name: surf-scheduler
-    restart: unless-stopped
+    build:
+      context: ..
+      dockerfile: scheduler/Dockerfile
+    ports:
+      - "5001:5000"
     volumes:
-      - /srv/shared/.surf_controller:/data
+      - ${HOME}/.surf_controller:/config/.surf_controller
+    environment:
+      - WEB_USERNAME=${WEB_USERNAME:-admin}
+      - WEB_PASSWORD=${WEB_PASSWORD:-password}
+      - SURF_CONTROLLER_CONFIG_DIR=/config
+    restart: unless-stopped
