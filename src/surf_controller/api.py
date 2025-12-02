@@ -79,7 +79,7 @@ class Workspace:
             logger.warning(f"API token not found at {self.auth_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.EXCLUSIONS_FILE = self.scriptdir / "exclusions.json"
-        self.filter = True
+        self.filter = False
 
         # Set up the headers for the request
         self.headers = {
@@ -135,13 +135,16 @@ class Workspace:
                 self.save(data)
 
             results = []
-            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause"])
+            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
             for result in data["results"]:
                 meta = result["resource_meta"]
                 if "ip" in meta:
                     ip = meta["ip"]
                 else:
                     ip = "Not available"
+                
+                end_date = result.get("end_time", "")
+                
                 if self.filter and username and username not in result["name"]:
                     continue
                 vm_id = result["id"]
@@ -153,12 +156,53 @@ class Workspace:
                         result["active"],
                         ip,
                         exclude_pause_status,
+                        end_date,
                     )
                 )
             return results
         else:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
             return []
+
+    def get_workspace(self, vm_id: str) -> Optional[namedtuple]:
+        """Fetches data for a single workspace."""
+        excluded_ids_set = self.load_exclusions()
+        url = f"{config['surf']['URL']}/{vm_id}"
+        response = requests.get(url, headers=self.headers)
+
+        if response.status_code == 200:
+            result = response.json()
+            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
+            
+            meta = result.get("resource_meta", {})
+            ip = meta.get("ip", "Not available")
+            end_date = result.get("end_time", "")
+            
+            exclude_pause_status = vm_id in excluded_ids_set
+            
+            return Data(
+                result["id"],
+                result["name"],
+                result["active"],
+                ip,
+                exclude_pause_status,
+                end_date,
+            )
+        else:
+            logger.error(f"Failed to fetch workspace {vm_id}. Status: {response.status_code}")
+            return None
+
+    def update_workspace(self, vm_id: str, data: dict) -> bool:
+        """Updates a workspace with the given data."""
+        url = f"{config['surf']['URL']}/{vm_id}/"
+        response = requests.patch(url, headers=self.headers, json=data)
+        
+        if response.status_code == 200:
+            logger.info(f"Successfully updated workspace {vm_id}")
+            return True
+        else:
+            logger.error(f"Failed to update workspace {vm_id}. Status: {response.status_code}, Response: {response.text}")
+            return False
 
     def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:

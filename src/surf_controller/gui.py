@@ -2,6 +2,7 @@ import curses
 import subprocess
 import threading
 import time
+import json
 
 from surf_controller.api import Action, Workspace, first_run
 from surf_controller.utils import config, logger
@@ -34,17 +35,70 @@ class Controller:
         self.vms: list = self.workspace.get_workspaces(
             save=True, username=self.username
         )
+        self.all_vms = self.vms
         self.current_row = 0
         self.current_page = 0
         self.selected = [False] * len(self.vms)
         self.excluded_ids = self.workspace.load_exclusions()
+        
+        # Filtering
+        self.default_filters = ["UOS1", "UOS2", "UOS3"]
+        if self.username:
+            self.default_filters.append(self.username)
+        
+        self.FILTERS_FILE = self.scriptdir / "filters.json"
+        self.custom_filters = []
+        if self.FILTERS_FILE.exists():
+            try:
+                with open(self.FILTERS_FILE, "r") as f:
+                    self.custom_filters = json.load(f)
+            except Exception as e:
+                logger.error(f"Failed to load filters: {e}")
+
+        self.active_filters = set()
+        self.show_filter_input = False
+
+        # Status
+        self.status_message = ""
+        self.status_type = "info" # info, success, error, busy
+        self.last_refreshed = time.strftime("%H:%M:%S")
+
+    def apply_filters(self):
+        if not self.active_filters:
+            self.vms = self.all_vms
+        else:
+            self.vms = []
+            for vm in self.all_vms:
+                for f in self.active_filters:
+                    if f.lower() in vm.name.lower():
+                        self.vms.append(vm)
+                        break
+        
+        # Apply username filter if enabled (legacy filter)
+        if self.workspace.filter and self.username:
+             self.vms = [vm for vm in self.vms if self.username in vm.name]
 
     def refresh(self) -> None:
         self.excluded_ids = self.workspace.load_exclusions()
-        self.vms = self.workspace.get_workspaces(save=False, username=self.username)
+        self.apply_filters()
         self.current_row = 0
+        self.current_page = 0 # Reset page on refresh (filtering)
         self.selected = [False] * len(self.vms)
         self.stdscr.refresh()
+
+    def fetch_all(self):
+        self.all_vms = self.workspace.get_workspaces(save=False, username=self.username)
+        self.last_refreshed = time.strftime("%H:%M:%S")
+        self.refresh()
+
+    def update_single_vm(self, vm_id: str):
+        new_vm_data = self.workspace.get_workspace(vm_id)
+        if new_vm_data:
+            for i, vm in enumerate(self.all_vms):
+                if vm.id == vm_id:
+                    self.all_vms[i] = new_vm_data
+                    break
+            self.refresh()
 
     def rename_user(self) -> None:
         self.stdscr.clear()
@@ -55,12 +109,80 @@ class Controller:
         new_username = self.stdscr.getstr(2, 20).decode("utf-8")
         curses.noecho()
         if new_username:
+            # Update default filters: remove old username, add new one
+            if self.username in self.default_filters:
+                self.default_filters.remove(self.username)
+                if self.username in self.active_filters:
+                    self.active_filters.remove(self.username)
+            
             self.username = new_username
             self.usernamefile.write_text(new_username)
+            
+            if new_username not in self.default_filters:
+                self.default_filters.append(new_username)
+                
             self.show_status_message(f"Username updated to: {new_username}")
             logger.info(f"Username updated to: {new_username}")
+            self.refresh()
         else:
             self.show_status_message("Username unchanged")
+
+    def batch_update_end_date(self):
+        selected_indices = [i for i, s in enumerate(self.selected) if s]
+        if not selected_indices:
+            self.show_status_message("No VMs selected for update")
+            return
+
+        self.stdscr.clear()
+        self.stdscr.addstr(0, 0, f"Updating end date for {len(selected_indices)} VMs")
+        self.stdscr.addstr(2, 0, "Enter new end date (dd-mm-yyyy): ")
+        curses.echo()
+        date_str = self.stdscr.getstr(2, 32).decode("utf-8")
+        curses.noecho()
+        
+        if not date_str:
+            self.show_status_message("Update cancelled")
+            self.refresh()
+            return
+
+        try:
+            from datetime import datetime
+            # Parse dd-mm-yyyy
+            dt = datetime.strptime(date_str, "%d-%m-%Y")
+            
+            # Check if in past (compare date only)
+            now = datetime.now()
+            if dt.date() < now.date():
+                self.show_status_message("Error: Date cannot be in the past")
+                self.refresh()
+                return
+            
+            # Set to end of day? User example showed specific time. 
+            # Let's set to 23:59:59 to be safe "until that day"
+            dt = dt.replace(hour=23, minute=59, second=59)
+            
+            # Format to ISO 8601: YYYY-MM-DDTHH:MM:SSZ
+            iso_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+            
+            self.show_status_message(f"Updating {len(selected_indices)} VMs...")
+            
+            success_count = 0
+            for idx in selected_indices:
+                vm = self.vms[idx]
+                if self.workspace.update_workspace(vm.id, {"end_time": iso_date}):
+                    success_count += 1
+                    # Optimistic update
+                    self.update_single_vm(vm.id)
+            
+            self.show_status_message(f"Updated {success_count}/{len(selected_indices)} VMs")
+            
+        except ValueError:
+            self.show_status_message("Error: Invalid date format. Use dd-mm-yyyy")
+        except Exception as e:
+            self.show_status_message(f"Error: {e}")
+            logger.error(f"Error updating end date: {e}")
+        
+        self.refresh()
 
     def toggle_pause_exclusion(self):
         if not self.vms:
@@ -88,6 +210,24 @@ class Controller:
             logger.error(
                 f"Error toggling exclusion for VM at row {self.current_row}: {e}"
             )
+
+    def add_custom_filter(self):
+        self.stdscr.clear()
+        self.stdscr.addstr(0, 0, "Enter filter string: ")
+        curses.echo()
+        f = self.stdscr.getstr(0, 21).decode("utf-8")
+        curses.noecho()
+        if f:
+            if f not in self.custom_filters:
+                self.custom_filters.append(f)
+                try:
+                    with open(self.FILTERS_FILE, "w") as file:
+                        json.dump(self.custom_filters, file)
+                except Exception as e:
+                    logger.error(f"Failed to save filters: {e}")
+            
+            self.active_filters.add(f)
+            self.refresh()
 
     def __call__(self, stdscr):
         self.stdscr = stdscr
@@ -136,43 +276,77 @@ class Controller:
                 if self.current_page > 0:
                     self.current_page -= 1
                     self.current_row = self.current_page * self.rows_per_page
-            elif key == ord("\n"):  # Enter key
+            elif key == ord("\n") or key == ord(" "):  # Enter or Space key
                 self.selected[self.current_row] = not self.selected[self.current_row]
             elif key == ord("a"):  # Select all
                 if all(self.selected):
                     self.selected = [False] * len(self.vms)
                 else:
                     self.selected = [True] * len(self.vms)
-            elif key == ord("f"):  # Filter VMs
+            elif key == ord("f"):  # Filter VMs (User)
                 self.workspace.filter = not self.workspace.filter
-                self.show_status_message(f"Toggle filtering for: {self.username}")
+                self.show_status_message(f"Toggle user filtering: {self.workspace.filter}")
                 self.refresh()
+            
+            # Filter Keys (Dynamic 1-9)
+            elif ord("1") <= key <= ord("9"):
+                idx = int(chr(key)) - 1
+                all_filters = self.default_filters + self.custom_filters
+                if idx < len(all_filters):
+                    f = all_filters[idx]
+                    if f in self.active_filters:
+                        self.active_filters.remove(f)
+                    else:
+                        self.active_filters.add(f)
+                    self.refresh()
+            elif key == ord("+") or key == ord("="):
+                self.add_custom_filter()
+
             elif key == ord("u"):  # Update VM list
-                self.show_status_message("Updating VM list...\n")
-                logger.info("Updated VM list...")
-                self.refresh()
+                self.show_status_message("Updating VM list...")
+                self.fetch_all()
+                self.show_status_message("VM list updated.")
+            
             elif key == ord("p"):
                 idlist = [
                     self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
                 ]
-                self.show_status_message(f"Pausing {idlist}...\n")
-                self.action("pause", self.vms, idlist)
-                time.sleep(5)
-                self.refresh()
+                if idlist:
+                    self.show_status_message(f"Pausing {len(idlist)} VMs...")
+                    self.action("pause", self.vms, idlist)
+                    
+                    # Optimized update
+                    for i in range(len(self.vms)):
+                        if self.selected[i]:
+                             self.update_single_vm(self.vms[i].id)
+                    
+                    self.show_status_message(f"Paused {len(idlist)} VMs.")
+                else:
+                    self.show_status_message("No VMs selected.")
+
             elif key == ord("r"):  # Resume selected VMs
                 idlist = [
                     self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
                 ]
-                logger.info(f"Resuming {idlist}...\n")
-                self.show_status_message(f"Resuming {idlist}...")
+                if idlist:
+                    self.show_status_message(f"Resuming {len(idlist)} VMs...")
+                    self.action("resume", self.vms, idlist)
+                    
+                    # Optimized update
+                    for i in range(len(self.vms)):
+                        if self.selected[i]:
+                             self.update_single_vm(self.vms[i].id)
 
-                self.action("resume", self.vms, idlist)
-                time.sleep(5)
-                self.refresh()
+                    self.show_status_message(f"Resumed {len(idlist)} VMs.")
+                else:
+                    self.show_status_message("No VMs selected.")
+
             elif key == ord("n"):  # Rename user
                 self.rename_user()
-            elif key == ord("e"):
+            elif key == ord("E"): # Shift+e for exclusion
                 self.toggle_pause_exclusion()
+            elif key == ord("e"): # e for end date update
+                self.batch_update_end_date()
             elif key == ord("l"):  # Toggle logs
                 self.show_logs = not self.show_logs
             elif key == ord("s"):  # SSH into selected VM
@@ -190,84 +364,157 @@ class Controller:
     def print_menu(self) -> None:
         self.stdscr.clear()
         v = str(__version__)
-        footlen = 10
-
-        # Calculate the number of rows that can fit on the screen
         max_y, max_x = self.stdscr.getmaxyx()
-        # Adjust for space taken by logs or footer
-        self.rows_per_page = max_y - footlen - 12 if self.show_logs else max_y - footlen
-        self.max_pages = len(self.vms) // self.rows_per_page
 
-        footer_text = (
-            f"== Username {'(filter)' if self.workspace.filter else ''}: {self.username}"
-            f" == surfcontroller version {v} == Page {self.current_page + 1} of {self.max_pages + 1} ==\n"
-            "Press \n'j' to move down, 'k' to move up,"
-            "'J' to move to next page,'K' to move to previous page,\n"
-            "'Enter' to select,'a' to select all,\n"
-            "'f' to toggle filter,'n' to rename user,\n"
-            "'p' to pause,'r' to resume,'u' to update status,\n"
-            "'e' to toggle pause exclusion,\n"
-            "'s' for ssh access,\n 'l' to toggle logs,'q' to quit\n"
-        )
-        footlen = len(footer_text.split("\n"))
+        # Layout configuration
+        header_height = 2
+        status_height = 3 # Status block
+        filter_height = 3 # Filter block
+        footer_height = 4 # Commands
+        
+        list_start_y = header_height + status_height + filter_height
+        list_height = max_y - list_start_y - footer_height
+        
+        self.rows_per_page = list_height
+        self.max_pages = max(0, (len(self.vms) - 1) // self.rows_per_page)
 
-        # Determine the current page's start and end indices
+        # 1. Header
+        header_text = f"SURF Controller v{v} | User: {self.username} | Last Refreshed: {self.last_refreshed} (u to update)"
+        self.stdscr.addstr(0, 0, header_text, curses.A_BOLD)
+        self.stdscr.hline(1, 0, curses.ACS_HLINE, max_x)
+
+        # 2. Status Block
+        status_title = "Status: "
+        self.stdscr.addstr(2, 0, status_title, curses.A_BOLD)
+        self.stdscr.addstr(2, len(status_title), self.status_message)
+        # Clear status after display if it was temporary? For now keep it.
+        
+        # 3. Filter Block
+        filter_title = "Filters: "
+        self.stdscr.addstr(4, 0, filter_title, curses.A_BOLD)
+        
+        current_x = len(filter_title)
+        
+        # Combine default and custom filters for display and indexing
+        all_filters = self.default_filters + self.custom_filters
+        
+        for idx, f in enumerate(all_filters):
+            style = curses.color_pair(2) if f in self.active_filters else curses.color_pair(4)
+            if f in self.active_filters:
+                style = style | curses.A_REVERSE
+            
+            # Add number hint [N]
+            filter_str = f"[{idx+1}:{f}] "
+            self.stdscr.addstr(4, current_x, filter_str, style)
+            current_x += len(filter_str)
+            
+        self.stdscr.addstr(4, current_x, "[+] Add Filter", curses.color_pair(4))
+
+        self.stdscr.hline(list_start_y - 1, 0, curses.ACS_HLINE, max_x)
+
+        # 4. VM List
         start_index = self.current_page * self.rows_per_page
         end_index = min(start_index + self.rows_per_page, len(self.vms))
 
-        # Display the VMs for the current page
-        for idx in range(start_index, end_index):
-            vm = self.vms[idx]
-            mark = "[*] " if self.selected[idx] else "[ ] "
-            status = "running" if vm.active else "paused"
-            base_line = mark + vm.name + f"({status})"
-            is_excluded = getattr(vm, "exclude_pause", False)
-            exclusion_mark = " [NO PAUSE]" if is_excluded else ""
-            line = base_line + exclusion_mark
-            colornumber = 1 if vm.active else 4
+        if not self.vms:
+            self.stdscr.addstr(list_start_y, 0, "No VMs found matching filters.")
+        else:
+            from datetime import datetime, timedelta
+            now = datetime.now()
+            
+            for idx in range(start_index, end_index):
+                vm = self.vms[idx]
+                mark = "[*] " if self.selected[idx] else "[ ] "
+                status = "running" if vm.active else "paused"
+                
+                # Calculate expiration
+                is_expiring_soon = False
+                end_date_str = ""
+                if vm.end_date:
+                    try:
+                        # Parse "2025-12-03T13:47:31.962000Z"
+                        # Handle potential variations or Z
+                        dt_str = vm.end_date.replace("Z", "+00:00")
+                        end_dt = datetime.fromisoformat(dt_str)
+                        # Remove timezone for comparison if needed, or make now aware
+                        # Assuming simple comparison is enough or strip tz
+                        if end_dt.tzinfo:
+                            end_dt = end_dt.replace(tzinfo=None) # naive comparison
+                        
+                        days_left = (end_dt - now).days
+                        if days_left <= 7:
+                            is_expiring_soon = True
+                        
+                        end_date_str = f" [Ends: {end_dt.strftime('%Y-%m-%d')}]"
+                    except Exception as e:
+                        logger.debug(f"Error parsing date {vm.end_date}: {e}")
 
-            display_idx = idx - start_index  # Adjust index for display on current page
-            if idx == self.current_row:
-                try:
-                    self.stdscr.addstr(
-                        display_idx, 0, line, curses.color_pair(2) | curses.A_REVERSE
-                    )
+                base_line = mark + vm.name + f" ({status})" + end_date_str
+                is_excluded = getattr(vm, "exclude_pause", False)
+                exclusion_mark = " [NO PAUSE]" if is_excluded else ""
+                line = base_line + exclusion_mark
+                
+                # Color Logic
+                # Active: Green (2)
+                # Paused: Grey (White/Dim - 4)
+                # Expiring Soon: Red (1) - Overrides others? User said "make the machines that will enid within 7 days red"
+                
+                if is_expiring_soon:
+                    color = curses.color_pair(1) # Red
+                elif vm.active:
+                    color = curses.color_pair(2) # Green
+                else:
+                    color = curses.color_pair(4) | curses.A_DIM # Grey/Dim White
+                
+                display_idx = list_start_y + (idx - start_index)
+                
+                if idx == self.current_row:
+                    self.stdscr.addstr(display_idx, 0, line, color | curses.A_REVERSE)
+                else:
+                    self.stdscr.addstr(display_idx, 0, line, color)
 
-                    # self.stdscr.addstr(display_idx, 0, line, curses.A_REVERSE)
-                except curses.error as e:
-                    logger.debug(f"Error highlighting line {idx}: {line}, {e}")
-            else:
-                try:
-                    self.stdscr.addstr(
-                        display_idx, 0, line, curses.color_pair(colornumber)
-                    )
-                except curses.error as e:
-                    logger.debug(f"Error displaying line {idx}: {line}, {e}")
-
-        # Display pagination and control information
-        try:
-            self.stdscr.addstr(self.rows_per_page, 0, footer_text)
-        except curses.error as e:
-            logger.debug(f"Error print menu: {e}")
+        # 5. Footer (Commands)
+        footer_y = max_y - footer_height
+        self.stdscr.hline(footer_y - 1, 0, curses.ACS_HLINE, max_x)
+        
+        commands = [
+            "j/k: Move", "Space/Enter: Select", "a: Select All",
+            "p: Pause", "r: Resume", "u: Update",
+            f"1-{len(all_filters)}: Toggle Filters", "+: Add Filter",
+            "f: Toggle User Filter", "n: Rename User", "e: End Date", "E: Exclude",
+            "s: SSH", "l: Logs", "q: Quit"
+        ]
+        
+        command_str = " | ".join(commands)
+        # Wrap commands if needed
+        self.stdscr.addstr(footer_y, 0, command_str[:max_x])
+        
+        page_info = f"Page {self.current_page + 1}/{self.max_pages + 1}"
+        self.stdscr.addstr(footer_y + 1, 0, page_info)
 
         # Display logs if enabled
         if self.show_logs:
-            try:
-                self.stdscr.addstr(max_y - 12, 0, "===logs===")
-                for idx, log in enumerate(self.logs[-10:]):
-                    self.stdscr.addstr(max_y - 11 + idx, 0, log)
-            except curses.error as e:
-                logger.debug(f"Error displaying logs: {e}")
+            # Overlay logs? Or replace list?
+            # Let's overlay at the bottom of the list area
+            log_start_y = max_y - 12
+            self.stdscr.addstr(log_start_y, 0, "=== LOGS ===", curses.A_BOLD)
+            for idx, log in enumerate(self.logs[-10:]):
+                if log_start_y + 1 + idx < max_y:
+                     self.stdscr.addstr(log_start_y + 1 + idx, 0, log.strip())
 
         self.stdscr.refresh()
 
     def show_status_message(self, message) -> None:
+        self.status_message = message
         try:
-            self.stdscr.addstr(len(self.vms) + 1, 0, message)
+            # Update status line (row 2)
+            self.stdscr.move(2, 0)
+            self.stdscr.clrtoeol()
+            self.stdscr.addstr(2, 0, "Status: ", curses.A_BOLD)
+            self.stdscr.addstr(2, 8, message)
+            self.stdscr.refresh()
         except curses.error as e:
             logger.debug(f"Error displaying status message: {e}")
-        self.stdscr.refresh()
-        time.sleep(2)  # Show the message for 2 seconds
 
     def ssh_to_vm(self, vm):
         if vm.ip:
