@@ -30,20 +30,29 @@ sudo vim /etc/profile.d/shared_env.sh
 ### install as tool
 Use [uv](https://docs.astral.sh/uv/concepts/tools/) to install surf-controller globally or add it to your local environment. You can install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` . Of course, you can also use pip to install it (but then you might also need to install python etc, something uv also takes care of).
 Here are three different commands you could use, the first one (uv tools) is recommended to install it globally.
+Dont run all three, pick one.
+
+#### option 1
+install globally
 
 ```
 uv tools install surf-controller
 ```
 
+#### option 2
+install in a .venv
 ```
 uv add surf-controller
 ```
 
+
+#### option 3
+Install with pip if you get nervous from new tools
 ```
 pip install surf-controller
 ```
 
-These commands all installs the `surfcontroller` command.
+All three commands install the `surfcontroller` command; if you dont know what to pick, use `uv`
 
 
 ## 🔑 First-time Setup of tokens
