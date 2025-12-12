@@ -167,12 +167,20 @@ The project includes a Docker-based scheduler for automating nightly VM pauses a
 
 ### 🚀 Deployment
 
-To deploy the scheduler to a remote machine:
+To deploy the scheduler to a remote machine, you can use the automated deployment script:
 
-- Copy `scheduler/docker-compose.deploy.yml` to the remote server (e.g., as `docker-compose.yml`).
-- Ensure the config directory exists (e.g., `/srv/shared/.surf_controller`) and contains your tokens.
-- Run:
-    ```bash
-    docker-compose up -d
-    ```
+```bash
+python3 scheduler/deploy.py
+```
+
+This script will:
+1.  **Configure Environment**: Check/create `scheduler/.env`, generate a secure `WEB_PASSWORD` if needed, and prompt for the `DEPLOY_HOST`.
+2.  **Build & Push**: Build the Docker image for `linux/amd64` and push it to Docker Hub.
+3.  **Deploy Files**: SCP the `.env` and `docker-compose.deploy.yml` to the remote server.
+4.  **Restart Service**: SSH into the remote server and restart the Docker service.
+
+**Prerequisites:**
+- SSH access to the remote host (default `rgrouls@145.38.185.245`) via key-based authentication.
+- Docker installed and running locally.
+
 

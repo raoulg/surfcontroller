@@ -12,6 +12,9 @@ import requests
 from surf_controller.setup import USER_CONFIG_DIR
 from surf_controller.utils import config, logger
 
+Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
+
+
 
 class Action:
     def __init__(self):
@@ -29,15 +32,21 @@ class Action:
             logger.warning(f"CSRF token not found at {self.csrf_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
 
-    def __call__(self, do: str, data: list, id_filter: list):
+    def __call__(self, do: str, data: list, id_filter: list, progress_callback=None):
+        # Filter items first to know the total count
+        items_to_process = []
         for item in data:
-            timestamp = time.strftime("%d-%m-%Y %H:%M:%S")
             if id_filter and item.name not in id_filter:
-                logger.debug(
-                    f"{timestamp} | {item.name} | {item.id} | active: {item.active} : skipping (not in id_filter)"
-                )
                 continue
-
+            items_to_process.append(item)
+            
+        total = len(items_to_process)
+        for i, item in enumerate(items_to_process):
+            if progress_callback:
+                progress_callback(i + 1, total)
+                
+            timestamp = time.strftime("%d-%m-%Y %H:%M:%S")
+            
             logger.info(
                 f"{timestamp} | {item.name} | {item.id} | active: {item.active} : Attempt to {do}..."
             )
@@ -135,7 +144,7 @@ class Workspace:
                 self.save(data)
 
             results = []
-            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
+            
             for result in data["results"]:
                 meta = result["resource_meta"]
                 if "ip" in meta:
@@ -172,7 +181,7 @@ class Workspace:
 
         if response.status_code == 200:
             result = response.json()
-            Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
+            
             
             meta = result.get("resource_meta", {})
             ip = meta.get("ip", "Not available")
@@ -254,6 +263,40 @@ class Workspace:
                 )
 
         logger.info(f"Data successfully saved to {self.OUTPUT_FILE}")
+
+    def load_from_cache(self) -> list:
+        """Loads workspace data from the cached CSV file."""
+        if not self.OUTPUT_FILE.exists():
+            return []
+            
+        excluded_ids_set = self.load_exclusions()
+        results = []
+        try:
+            with self.OUTPUT_FILE.open("r", newline="") as csvfile:
+                reader = csv.DictReader(csvfile)
+                for row in reader:
+                    # Map CSV fields to Data namedtuple
+                    vm_id = row["id"]
+                    exclude_pause_status = vm_id in excluded_ids_set
+                    # CSV might preserve strings, convert active to boolean
+                    active = row["active"].lower() == 'true' if isinstance(row["active"], str) else bool(row["active"])
+                    
+                    results.append(
+                        Data(
+                            vm_id,
+                            row["name"],
+                            active,
+                            row["ip"],
+                            exclude_pause_status,
+                            "", # End date not currently saved in CSV, maybe add later or fetch fresh
+                        )
+                    )
+            logger.info(f"Loaded {len(results)} workspaces from cache")
+            return results
+        except Exception as e:
+            logger.error(f"Failed to load from cache: {e}")
+            return []
+
 
 
 def first_run(stdscr: curses.window):

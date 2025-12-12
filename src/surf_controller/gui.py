@@ -1,6 +1,7 @@
 import curses
 import subprocess
 import threading
+import queue
 import time
 import json
 
@@ -17,6 +18,13 @@ class Controller:
         self.show_logs = False
         self.logs = []
         self.log_lock = threading.Lock()
+        self.data_lock = threading.Lock()
+        self.update_queue = queue.Queue()
+        self.is_updating = False
+        self.spinner_chars = ["|", "/", "-", "\\"]
+        self.spinner_idx = 0
+        self.last_spinner_update = 0
+        self.last_auto_refresh = time.time()
         self.URL = config["surf"]["URL"] + "/?application_type=Compute&deleted=false"
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
@@ -32,9 +40,14 @@ class Controller:
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.workspace = Workspace()
         self.action = Action()
-        self.vms: list = self.workspace.get_workspaces(
-            save=True, username=self.username
-        )
+        self.vms: list = self.workspace.load_from_cache()
+        if not self.vms:
+            # Fallback if cache empty or failed
+            self.vms = []
+        
+        # Trigger background update is moved to __call__ to ensure stdscr exists
+        
+        self.all_vms = self.vms
         self.all_vms = self.vms
         self.current_row = 0
         self.current_page = 0
@@ -99,11 +112,37 @@ class Controller:
     def update_single_vm(self, vm_id: str):
         new_vm_data = self.workspace.get_workspace(vm_id)
         if new_vm_data:
-            for i, vm in enumerate(self.all_vms):
-                if vm.id == vm_id:
-                    self.all_vms[i] = new_vm_data
-                    break
+            with self.data_lock:
+                for i, vm in enumerate(self.all_vms):
+                    if vm.id == vm_id:
+                        self.all_vms[i] = new_vm_data
+                        break
             self.refresh()
+
+    def start_background_update(self, scope="all", vm_ids=None):
+        if self.is_updating:
+            return
+        
+        self.is_updating = True
+        self.show_status_message("Updating in background...")
+        t = threading.Thread(target=self._background_fetch, args=(scope, vm_ids), daemon=True)
+        t.start()
+
+    def _background_fetch(self, scope, vm_ids):
+        try:
+            if scope == "all":
+                data = self.workspace.get_workspaces(save=True, username=self.username)
+                self.update_queue.put(("all", data))
+            elif scope == "single" and vm_ids:
+                # Update specific VMs (smart update)
+                results = []
+                for vm_id in vm_ids:
+                    data = self.workspace.get_workspace(vm_id)
+                    if data:
+                        results.append(data)
+                self.update_queue.put(("partial", results))
+        except Exception as e:
+            self.update_queue.put(("error", str(e)))
 
     def rename_user(self) -> None:
         self.stdscr.clear()
@@ -132,20 +171,64 @@ class Controller:
         else:
             self.show_status_message("Username unchanged")
 
-    def draw_progress_bar(self, current, total, y_pos):
+    def add_custom_filter(self) -> None:
+        self.stdscr.clear()
+        self.stdscr.addstr(0, 0, "Add Custom Filter")
+        self.stdscr.addstr(2, 0, "Enter filter string: ")
+        self.stdscr.refresh()
+        curses.echo()
+        try:
+            new_filter = self.stdscr.getstr(2, 21).decode("utf-8").strip()
+        except Exception:
+            new_filter = ""
+        curses.noecho()
+        
+        if new_filter:
+            if new_filter not in self.custom_filters:
+                self.custom_filters.append(new_filter)
+                try:
+                    with open(self.FILTERS_FILE, "w") as f:
+                        json.dump(self.custom_filters, f)
+                    self.show_status_message(f"Added filter: {new_filter}")
+                    self.active_filters.add(new_filter) # Auto-activate
+                except Exception as e:
+                    logger.error(f"Failed to save filters: {e}")
+                    self.show_status_message(f"Error saving filter: {e}")
+            else:
+                self.show_status_message("Filter already exists")
+        else:
+            self.show_status_message("Cancelled")
+            
+        self.refresh()
+
+    def draw_progress_bar(self, current, total, y_pos=None):
+        # Ignore y_pos, draw in Notification Center (Row 4)
         height, width = self.stdscr.getmaxyx()
-        bar_width = width - 10
-        if bar_width < 10: bar_width = 10
+        
+        # Notification Center width is roughly width - 4
+        bar_area_width = width - 6 
+        if bar_area_width < 10: bar_area_width = 10
         
         percent = current / total
-        filled_len = int(bar_width * percent)
+        filled_len = int(bar_area_width * percent)
         
-        # Thicker style
-        bar = "#" * filled_len + "-" * (bar_width - filled_len)
+        bar = "#" * filled_len + "-" * (bar_area_width - filled_len)
         percent_str = f"{percent*100:.0f}%"
         
         try:
-            self.stdscr.addstr(y_pos, 0, f"[{bar}] {percent_str}")
+            # Clear line first
+            self.stdscr.move(4, 2)
+            self.stdscr.clrtoeol()
+            # Draw bar
+            # 68 = 2 border + 2 padding + ...
+            # Actually just printing it at specific pos
+            display_str = f"[{bar}] {percent_str}"
+            # Ensure it fits
+            if len(display_str) > width - 4:
+                display_str = display_str[:width-5]
+            
+            self.stdscr.addstr(4, 2, display_str, curses.color_pair(3)) # Blue for progress
+            self.stdscr.addstr(4, width - 2, "│") # Restore right border if overwritten?
             self.stdscr.refresh()
         except curses.error:
             pass
@@ -290,120 +373,175 @@ class Controller:
 
         self.print_menu()
 
+        self.stdscr.timeout(100) # 100ms timeout for non-blocking UI
+        
+        # Start background update now that UI is ready
+        self.start_background_update("all")
+        
+        self.print_menu()
+
         while True:
-            key = self.stdscr.getch()
-            if key == ord("j") and self.current_row < len(self.vms) - 1:
-                if self.current_row < len(self.vms) - 1:
-                    self.current_row += 1
-                    # Go to the next page if necessary
-                    if self.current_row >= (self.current_page + 1) * self.rows_per_page:
+            needs_redraw = False
+
+            # Check queue for background updates
+            try:
+                while True:
+                    msg_type, content = self.update_queue.get_nowait()
+                    if msg_type == "all":
+                        with self.data_lock:
+                            self.all_vms = content
+                        self.last_refreshed = time.strftime("%H:%M:%S")
+                        self.refresh()
+                        self.is_updating = False
+                        self.show_status_message("Background update complete.")
+                        needs_redraw = True
+                    elif msg_type == "partial":
+                        with self.data_lock:
+                            for new_vm in content:
+                                for i, vm in enumerate(self.all_vms):
+                                    if vm.id == new_vm.id:
+                                        self.all_vms[i] = new_vm
+                                        break
+                        self.refresh()
+                        self.is_updating = False
+                        needs_redraw = True
+                    elif msg_type == "error":
+                        self.is_updating = False
+                        self.show_status_message(f"Update failed: {content}")
+                        needs_redraw = True
+            except queue.Empty:
+                pass
+
+            # Auto-refresh check (every 5 mins)
+            if time.time() - self.last_auto_refresh > 300:
+                self.start_background_update()
+                self.last_auto_refresh = time.time()
+
+            # Handle user input
+            try:
+                key = self.stdscr.getch()
+            except curses.error:
+                key = -1
+
+            if key != -1:
+                needs_redraw = True
+                
+                if key == ord("j") and self.current_row < len(self.vms) - 1:
+                    if self.current_row < len(self.vms) - 1:
+                        self.current_row += 1
+                        if self.current_row >= (self.current_page + 1) * self.rows_per_page:
+                            self.current_page += 1
+                elif key == ord("J"):
+                    if self.current_page < self.max_pages:
                         self.current_page += 1
-            elif key == ord("J"):
-                if self.current_page < self.max_pages:
-                    self.current_page += 1
-                    self.current_row = self.current_page * self.rows_per_page
-            elif key == ord("k") and self.current_row > 0:
-                if self.current_row > 0:
-                    self.current_row -= 1
-                    # Go to the previous page if necessary
-                    if self.current_row < self.current_page * self.rows_per_page:
+                        self.current_row = self.current_page * self.rows_per_page
+                elif key == ord("k") and self.current_row > 0:
+                    if self.current_row > 0:
+                        self.current_row -= 1
+                        if self.current_row < self.current_page * self.rows_per_page:
+                            self.current_page -= 1
+                elif key == ord("K"):
+                    if self.current_page > 0:
                         self.current_page -= 1
-            elif key == ord("K"):
-                if self.current_page > 0:
-                    self.current_page -= 1
-                    self.current_row = self.current_page * self.rows_per_page
-            elif key == ord("\n") or key == ord(" "):  # Enter or Space key
-                self.selected[self.current_row] = not self.selected[self.current_row]
-            elif key == ord("a"):  # Select all
-                if all(self.selected):
-                    self.selected = [False] * len(self.vms)
-                else:
-                    self.selected = [True] * len(self.vms)
-            elif key == ord("f"):  # Filter VMs (User)
-                self.workspace.filter = not self.workspace.filter
-                self.show_status_message(f"Toggle user filtering: {self.workspace.filter}")
-                self.refresh()
-            elif key == ord("R"): # Filter Running
-                self.filter_running = not self.filter_running
-                self.show_status_message(f"Toggle running filter: {self.filter_running}")
-                self.refresh()
-            
-            # Filter Keys (Dynamic 1-9)
-            elif ord("1") <= key <= ord("9"):
-                idx = int(chr(key)) - 1
-                all_filters = self.default_filters + self.custom_filters
-                if idx < len(all_filters):
-                    f = all_filters[idx]
-                    if f in self.active_filters:
-                        self.active_filters.remove(f)
+                        self.current_row = self.current_page * self.rows_per_page
+                elif key == ord("\n") or key == ord(" "):
+                    self.selected[self.current_row] = not self.selected[self.current_row]
+                elif key == ord("a"):
+                    if all(self.selected):
+                        self.selected = [False] * len(self.vms)
                     else:
-                        self.active_filters.add(f)
+                        self.selected = [True] * len(self.vms)
+                elif key == ord("f"):
+                    self.workspace.filter = not self.workspace.filter
+                    self.show_status_message(f"Toggle user filtering: {self.workspace.filter}")
                     self.refresh()
-            elif key == ord("+") or key == ord("="):
-                self.add_custom_filter()
+                elif key == ord("R"):
+                    self.filter_running = not self.filter_running
+                    self.show_status_message(f"Toggle running filter: {self.filter_running}")
+                    self.refresh()
+                elif ord("1") <= key <= ord("9"):
+                    idx = int(chr(key)) - 1
+                    all_filters = self.default_filters + self.custom_filters
+                    if idx < len(all_filters):
+                        f = all_filters[idx]
+                        if f in self.active_filters:
+                            self.active_filters.remove(f)
+                        else:
+                            self.active_filters.add(f)
+                        self.refresh()
+                elif key == ord("+") or key == ord("="):
+                    self.add_custom_filter()
+                elif key == ord("u"):
+                    self.start_background_update("all")
+                elif key == ord("p"):
+                    idlist = [
+                        self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                    ]
+                    if idlist:
+                        self.show_status_message(f"Pausing {len(idlist)} VMs...")
+                        height, width = self.stdscr.getmaxyx()
+                        progress_y = height - 4
+                        self.action("pause", self.vms, idlist, progress_callback=lambda c, t: self.draw_progress_bar(c, t, progress_y))
+                        vm_ids_to_update = [self.vms[i].id for i in range(len(self.vms)) if self.selected[i]]
+                        self.start_background_update("single", vm_ids_to_update)
+                        self.show_status_message(f"Paused {len(idlist)} VMs. Refreshing...")
+                    else:
+                        self.show_status_message("No VMs selected.")
+                elif key == ord("r"):
+                    idlist = [
+                        self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                    ]
+                    if idlist:
+                        self.show_status_message(f"Resuming {len(idlist)} VMs...")
+                        height, width = self.stdscr.getmaxyx()
+                        progress_y = height - 4
+                        self.action("resume", self.vms, idlist, progress_callback=lambda c, t: self.draw_progress_bar(c, t, progress_y))
+                        vm_ids_to_update = [self.vms[i].id for i in range(len(self.vms)) if self.selected[i]]
+                        self.start_background_update("single", vm_ids_to_update)
+                        self.show_status_message(f"Resumed {len(idlist)} VMs. Refreshing...")
+                    else:
+                        self.show_status_message("No VMs selected.")
+                elif key == ord("n"):
+                    self.rename_user()
+                elif key == ord("E"):
+                    self.toggle_pause_exclusion()
+                elif key == ord("e"):
+                    self.batch_update_end_date()
+                elif key == ord("c"):
+                    self.start_creation_wizard()
+                    self.start_background_update("all") # Check for new VMs
+                elif key == ord("d"):
+                    self.delete_selected_vms()
+                elif key == ord("l"):
+                    self.show_logs = not self.show_logs
+                elif key == ord("s"):
+                    selected_vms = [vm for i, vm in enumerate(self.vms) if self.selected[i]]
+                    if len(selected_vms) == 1:
+                        self.ssh_to_vm(selected_vms[0])
+                    elif len(selected_vms) > 1:
+                        self.show_status_message("Please select only one VM for SSH")
+                    else:
+                        self.show_status_message("No VM selected for SSH")
+                elif key == ord("q"):
+                    break
 
-            elif key == ord("u"):  # Update VM list
-                self.show_status_message("Updating VM list...")
-                self.fetch_all()
-                self.show_status_message("VM list updated.")
-            
-            elif key == ord("p"):
-                idlist = [
-                    self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
-                ]
-                if idlist:
-                    self.show_status_message(f"Pausing {len(idlist)} VMs...")
-                    self.action("pause", self.vms, idlist)
-                    
-                    # Optimized update
-                    for i in range(len(self.vms)):
-                        if self.selected[i]:
-                             self.update_single_vm(self.vms[i].id)
-                    
-                    self.show_status_message(f"Paused {len(idlist)} VMs.")
-                else:
-                    self.show_status_message("No VMs selected.")
+            if needs_redraw:
+                self.print_menu()
 
-            elif key == ord("r"):  # Resume selected VMs
-                idlist = [
-                    self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
-                ]
-                if idlist:
-                    self.show_status_message(f"Resuming {len(idlist)} VMs...")
-                    self.action("resume", self.vms, idlist)
-                    
-                    # Optimized update
-                    for i in range(len(self.vms)):
-                        if self.selected[i]:
-                             self.update_single_vm(self.vms[i].id)
-
-                    self.show_status_message(f"Resumed {len(idlist)} VMs.")
-                else:
-                    self.show_status_message("No VMs selected.")
-
-            elif key == ord("n"):  # Rename user
-                self.rename_user()
-            elif key == ord("E"): # Shift+e for exclusion
-                self.toggle_pause_exclusion()
-            elif key == ord("e"): # e for end date update
-                self.batch_update_end_date()
-            elif key == ord("c"): # c for creation wizard
-                self.start_creation_wizard()
-            elif key == ord("d"): # d for delete
-                self.delete_selected_vms()
-            elif key == ord("l"):  # Toggle logs
-                self.show_logs = not self.show_logs
-            elif key == ord("s"):  # SSH into selected VM
-                selected_vms = [vm for i, vm in enumerate(self.vms) if self.selected[i]]
-                if len(selected_vms) == 1:
-                    self.ssh_to_vm(selected_vms[0])
-                elif len(selected_vms) > 1:
-                    self.show_status_message("Please select only one VM for SSH")
-                else:
-                    self.show_status_message("No VM selected for SSH")
-            elif key == ord("q"):  # Quit
-                break
-            self.print_menu()
+            # Spinner update (independent of key press)
+            if self.is_updating:
+                if time.time() - self.last_spinner_update > 0.1:
+                    self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
+                    self.last_spinner_update = time.time()
+                    try:
+                        self.stdscr.addstr(3, 2, f"[{self.spinner_chars[self.spinner_idx]}]", curses.A_BOLD)
+                        self.stdscr.refresh()
+                    except: pass
+            else:
+                 # Clear spinner spot if not updating
+                 try:
+                    self.stdscr.addstr(3, 2, "[ ]", curses.A_BOLD)
+                 except: pass
 
     def print_menu(self) -> None:
         self.stdscr.clear()
@@ -411,10 +549,10 @@ class Controller:
         max_y, max_x = self.stdscr.getmaxyx()
 
         # Layout configuration
-        header_height = 2
-        status_height = 3 # Status block
-        filter_height = 3 # Filter block
-        footer_height = 4 # Commands
+        header_height = 1
+        status_height = 6 # Notification Center
+        filter_height = 3
+        footer_height = 4
         
         list_start_y = header_height + status_height + filter_height
         list_height = max_y - list_start_y - footer_height
@@ -423,19 +561,46 @@ class Controller:
         self.max_pages = max(0, (len(self.vms) - 1) // self.rows_per_page)
 
         # 1. Header
-        header_text = f"SURF Controller v{v} | User: {self.username} | Last Refreshed: {self.last_refreshed} (u to update)"
+        header_text = f"SURF Controller v{v} | User: {self.username}"
         self.stdscr.addstr(0, 0, header_text, curses.A_BOLD)
-        self.stdscr.hline(1, 0, curses.ACS_HLINE, max_x)
+        # self.stdscr.hline(1, 0, curses.ACS_HLINE, max_x) # Removed separator
 
-        # 2. Status Block
-        status_title = "Status: "
-        self.stdscr.addstr(2, 0, status_title, curses.A_BOLD)
-        self.stdscr.addstr(2, len(status_title), self.status_message)
-        # Clear status after display if it was temporary? For now keep it.
-        
-        # 3. Filter Block
+        # 2. Notification Center (Rows 1-6)
+        # Box drawing
+        try:
+            self.stdscr.attron(curses.color_pair(4)) # White
+            # Top Border
+            self.stdscr.addstr(1, 0, "┌" + "─" * (max_x - 2) + "┐")
+            # Side Borders
+            for i in range(2, 6):
+                self.stdscr.addstr(i, 0, "│")
+                self.stdscr.addstr(i, max_x - 1, "│")
+            # Bottom Border
+            self.stdscr.addstr(6, 0, "└" + "─" * (max_x - 2) + "┘")
+            self.stdscr.attroff(curses.color_pair(4))
+            
+            # Content
+            # Row 2: Title
+            self.stdscr.addstr(2, 2, "NOTIFICATIONS", curses.A_BOLD)
+            self.stdscr.addstr(2, max_x - 20, f"Refreshed: {self.last_refreshed}", curses.A_DIM)
+            
+            # Row 3: Status Message & Spinner
+            spinner_char = self.spinner_chars[self.spinner_idx] if self.is_updating else " "
+            status_color = curses.color_pair(2) if "Success" in self.status_message else (curses.color_pair(1) if "Error" in self.status_message else curses.color_pair(4))
+            
+            self.stdscr.addstr(3, 2, f"[{spinner_char}] ", curses.A_BOLD)
+            self.stdscr.addstr(3, 6, self.status_message, status_color)
+            
+            # Row 4: Progress Bar (Placeholder if empty)
+            # draw_progress_bar writes here directly
+            
+        except curses.error:
+            pass
+
+        # 3. Filter Block (Start at 7)
+        filter_y = 7
         filter_title = "Filters: "
-        self.stdscr.addstr(4, 0, filter_title, curses.A_BOLD)
+        self.stdscr.addstr(filter_y, 0, filter_title, curses.A_BOLD)
         
         current_x = len(filter_title)
         
@@ -449,13 +614,13 @@ class Controller:
             
             # Add number hint [N]
             filter_str = f"[{idx+1}:{f}] "
-            self.stdscr.addstr(4, current_x, filter_str, style)
+            self.stdscr.addstr(filter_y, current_x, filter_str, style)
             current_x += len(filter_str)
             
-        self.stdscr.addstr(4, current_x, "[+] Add Filter", curses.color_pair(4))
+        self.stdscr.addstr(filter_y, current_x, "[+] Add Filter", curses.color_pair(4))
         
         if self.filter_running:
-             self.stdscr.addstr(4, current_x + 15, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
+             self.stdscr.addstr(filter_y, current_x + 15, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
 
         self.stdscr.hline(list_start_y - 1, 0, curses.ACS_HLINE, max_x)
 
@@ -576,6 +741,9 @@ class Controller:
 
     def show_status_message(self, message) -> None:
         self.status_message = message
+        if not hasattr(self, 'stdscr') or self.stdscr is None:
+            return
+
         try:
             # Update status line (row 2)
             self.stdscr.move(2, 0)
@@ -606,16 +774,17 @@ class Controller:
             self.show_status_message(f"No IP address available for {vm.name}")
 
     def start_creation_wizard(self):
-        wizard = CreationWizard(self.stdscr, self.workspace, self.scriptdir)
+        wizard = CreationWizard(self.stdscr, self.workspace, self.scriptdir, self)
         wizard.run()
         self.refresh()
 
 
 class CreationWizard:
-    def __init__(self, stdscr, workspace, scriptdir):
+    def __init__(self, stdscr, workspace, scriptdir, controller):
         self.stdscr = stdscr
         self.workspace = workspace
         self.scriptdir = scriptdir
+        self.controller = controller
         self.step = 0
         self.users_file = None
         self.template_file = None
@@ -885,17 +1054,28 @@ class CreationWizard:
                 success_count += 1
             else:
                 self.stdscr.addstr(4 + idx, 40, "FAILED", curses.color_pair(1))
-            
+                
             self.stdscr.refresh()
             
-        self.stdscr.addstr(height - 2, 0, f"Finished. Created {success_count}/{total}. Press any key to exit.")
+            # Draw progress bar
+            height, width = self.stdscr.getmaxyx()
+            self.controller.draw_progress_bar(idx + 1, total, height - 4)
+            
+        self.stdscr.addstr(height - 2, 0, f"Finished. Created {success_count}/{total}. Press any key to continue.")
         self.stdscr.getch()
+        
+        self.step = -1 # Exit wizard
+        return 'quit'
+
 
 
 def main():
-    curses.wrapper(first_run)
-    controller = Controller()
-    curses.wrapper(controller)
+    def run_app(stdscr):
+        first_run(stdscr)
+        controller = Controller()
+        controller(stdscr)
+
+    curses.wrapper(run_app)
 
 
 if __name__ == "__main__":
