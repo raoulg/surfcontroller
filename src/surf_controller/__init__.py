@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+
 from surf_controller.setup import USER_CONFIG_DIR, USER_CONFIG_FILE
 
 
@@ -17,5 +18,5 @@ def setup_config():
 
 setup_config()
 
-__version__ = "1.1"
+__version__ = "1.1.1"
 print(f"Welcome to surf_controller version {__version__}")
