@@ -110,6 +110,17 @@ surfcontroller
 - `u`: Update VM list
 - `s`: ssh into selected VM (select just one VM)
 
+### How to create your own templates
+It is a bit hacky, but i follow these steps:
+- Go to your [SRC workspaces dashboard](https://portal.live.surfresearchcloud.nl/dashboard/workspaces)
+- Manually, create a new VM with the settings (wallet, colab, type, etc) you want to use as a template
+- Get the id of the VM from your dashboard.
+- Go to the [swagger docs](https://gw.live.surfresearchcloud.nl/v1/workspace/swagger/docs/) and run the `GET /v1/workspace/workspaces/{id}/` request with the id of your VM.
+- You can have a look at the tempaltes/example.json i provided. You should replace all the tags that have `<...>` with your own values.
+- Keep the three values with `placeholder-...`, surfcontroller will replace these when creating VMs.
+
+I created three templates for different colabs: ubuntu-8GBRAM, ubuntu-16GBRAM and ubuntu-GPU. I am planning on improving the templates in the future, to make them more flexible.
+
 ### ✨ New in v1.0
 - **Bulk Creation Wizard**: Press `c` to launch a step-by-step wizard for creating multiple VMs from a user list and template.
 - **Bulk Deletion**: Press `d` to delete multiple VMs at once. Includes a safety confirmation dialog.

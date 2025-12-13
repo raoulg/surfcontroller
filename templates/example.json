@@ -1,0 +1,39 @@
+{
+  "co_id": "<co id here>",
+  "wallet_id": "<wallet id here>",
+  "description": "Workspace created via Python script",
+  "name": "placeholder-name",
+  "end_time": "placeholder-endtime",
+  "meta": {
+    "application_offering_id": "<offering id here>",
+    "application_name": "<application name here>",
+    "application_icon": "",
+    "application_type": "Compute",
+    "subscription_tag": "<subscription tag here>",
+    "subscription_name": "SURF HPC Cloud",
+    "subscription_group_id": "<subscription group id here>",
+    "co_name": "<co name here>",
+    "host_name": "placeholder-hostname",
+    "subscription_resource_type": "VM",
+    "flavours": [
+      {
+        "id": "36b29c31-ea66-4bdf-a2d0-d9bd1df76d0d",
+        "name": "Ubuntu 24.04",
+        "category": "os"
+      },
+      {
+        "id": "0f71f7ab-da03-4c98-9074-a03d84b6c235",
+        "name": "1 Core - 8 GB RAM",
+        "category": "size"
+      }
+    ],
+    "storages": [],
+    "ips": [],
+    "networks": [],
+    "dataset_names": [],
+    "dataset_ids": [],
+    "interactive_parameters": [],
+    "application_icon": "data:image/png;base64,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",
+    "wallet_name": "<wallet name here>"
+  }
+}

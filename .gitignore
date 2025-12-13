@@ -18,5 +18,4 @@ csrf-token.txt
 .DS_Store
 
 users/
-templates/
 .env

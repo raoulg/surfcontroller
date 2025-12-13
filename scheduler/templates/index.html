@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Surf Controller Scheduler</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th,
+        td {
+            padding: 4px 10px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            background-color: #f4f4f4;
+        }
+
+        tr:hover {
+            background-color: #f9f9f9;
+        }
+
+        .status-running {
+            color: green;
+            font-weight: bold;
+        }
+
+        .status-paused {
+            color: gray;
+        }
+
+        .excluded {
+            background-color: #fff3cd;
+        }
+
+        .btn {
+            padding: 5px 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 3px;
+        }
+
+        .btn-exclude {
+            background-color: #ffc107;
+            color: #000;
+        }
+
+        .btn-include {
+            background-color: #28a745;
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Surf Controller Scheduler</h1>
+    <p>Manage VM pause exclusions. VMs marked as <strong>Excluded</strong> will NOT be paused by the nightly schedule.
+    </p>
+
+    <div
+        style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; border: 1px solid #ddd;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <strong>Last Run:</strong> <span>{{ last_run }}</span>
+            </div>
+            <form action="{{ url_for('trigger_pause') }}" method="POST"
+                onsubmit="return confirm('Are you sure you want to trigger the pause job now?');">
+                <button type="submit" class="btn" style="background-color: #007bff; color: white;">Trigger Pause
+                    Now</button>
+            </form>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Schedule</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for vm in vms %}
+            <tr class="{{ 'excluded' if vm.id in exclusions else '' }}">
+                <td>{{ vm.name }}</td>
+                <td>{{ vm.id }}</td>
+                <td>
+                    {% if vm.active %}
+                    <span class="status-running">Running</span>
+                    {% else %}
+                    <span class="status-paused">Paused</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if vm.id in exclusions %}
+                    <strong>EXCLUDED</strong>
+                    {% else %}
+                    Normal
+                    {% endif %}
+                </td>
+                <td>
+                    <form action="{{ url_for('toggle_exclusion', vm_id=vm.id) }}" method="POST">
+                        {% if vm.id in exclusions %}
+                        <button type="submit" class="btn btn-include">Include in Schedule</button>
+                        {% else %}
+                        <button type="submit" class="btn btn-exclude">Exclude from Schedule</button>
+                        {% endif %}
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+
+</html>
