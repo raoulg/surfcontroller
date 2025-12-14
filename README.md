@@ -190,8 +190,11 @@ This script will:
 3.  **Deploy Files**: SCP the `.env` and `docker-compose.deploy.yml` to the remote server.
 4.  **Restart Service**: SSH into the remote server and restart the Docker service.
 
+If you open port 5001, you will have a GUI dashboard to exclude VMs from pausing.
+so: http://123.45.67.89:5001 where 123.45.67.89 is the IP of your remote server.
+
 **Prerequisites:**
-- SSH access to the remote host (default `rgrouls@145.38.185.245`) via key-based authentication.
+- SSH access to the remote host (default `rgrouls@123.45.67.89`) via key-based authentication.
 - Docker installed and running locally.
 
 

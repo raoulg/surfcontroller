@@ -12,8 +12,8 @@ ENV_SAMPLE = SCHEDULER_DIR / ".env.sample"
 DOCKER_FILE = SCHEDULER_DIR / "Dockerfile"
 COMPOSE_DEPLOY = SCHEDULER_DIR / "docker-compose.deploy.yml"
 IMAGE_NAME = "raoulgrouls/surf-scheduler:latest"
-DEFAULT_HOST_IP = "145.38.185.245"
-REMOTE_USER = "rgrouls"
+DEFAULT_HOST_IP = "123.44.67.89"
+DEFAULT_USER = "yourusername"
 REMOTE_PATH = "/srv/shared/mads_demoserver"
 
 def load_env(env_path):
@@ -51,6 +51,14 @@ def check_env():
     if "WEB_PASSWORD" not in config or config["WEB_PASSWORD"] in ["secret", ""]:
         print("[*] Generating secure WEB_PASSWORD...")
         config["WEB_PASSWORD"] = secrets.token_urlsafe(16)
+        dirty = True
+
+    # Check DEPLOY_HOST
+    # Check REMOTE_USER
+    if "REMOTE_USER" not in config:
+        print(f"[*] REMOTE_USER not found.")
+        user_input = input(f"Enter remote user [{DEFAULT_USER}]: ").strip()
+        config["REMOTE_USER"] = user_input if user_input else DEFAULT_USER
         dirty = True
 
     # Check DEPLOY_HOST
@@ -92,7 +100,8 @@ def main():
     # 1. Environment Setup
     config = check_env()
     deploy_host = config["DEPLOY_HOST"]
-    remote_target = f"{REMOTE_USER}@{deploy_host}"
+    deploy_user = config["REMOTE_USER"]
+    remote_target = f"{deploy_user}@{deploy_host}"
     
     print(f"[*] Target: {remote_target}")
     print(f"[*] Web Password: {config['WEB_PASSWORD'][:5]}...")
@@ -100,8 +109,11 @@ def main():
     # 2. Docker Build & Push
     print("\n--- Building and Pushing Docker Image ---")
     # Using string for complex command with flags
-    build_cmd = f"docker buildx build --platform linux/amd64 -t {IMAGE_NAME} -f Dockerfile . --push"
-    run_command(build_cmd, cwd=SCHEDULER_DIR, shell=True)
+    # We must run from project root because Dockerfile COPY commands expect 'scheduler/' prefix
+    # and we need pyproject.toml from root for 'uv build'
+    project_root = SCHEDULER_DIR.parent
+    build_cmd = f"docker buildx build --platform linux/amd64 -t {IMAGE_NAME} -f scheduler/Dockerfile . --push"
+    run_command(build_cmd, cwd=project_root, shell=True)
 
     # 3. Deploy Files
     print("\n--- Deploying Configuration Files ---")
