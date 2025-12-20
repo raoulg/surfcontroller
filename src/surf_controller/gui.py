@@ -71,6 +71,7 @@ class Controller:
         self.active_filters = set()
         self.show_filter_input = False
         self.filter_running = False
+        self.filter_outdated = False
 
         # Status
         self.status_message = ""
@@ -95,6 +96,24 @@ class Controller:
         # Apply running filter
         if self.filter_running:
             self.vms = [vm for vm in self.vms if vm.active]
+
+        # Apply outdated filter
+        if self.filter_outdated:
+            from datetime import datetime
+            now = datetime.now()
+            outdated_vms = []
+            for vm in self.vms:
+                if vm.end_date:
+                    try:
+                        dt_str = vm.end_date.replace("Z", "+00:00")
+                        end_dt = datetime.fromisoformat(dt_str)
+                        if end_dt.tzinfo:
+                            end_dt = end_dt.replace(tzinfo=None)
+                        if end_dt < now:
+                            outdated_vms.append(vm)
+                    except Exception:
+                        pass
+            self.vms = outdated_vms
 
     def refresh(self) -> None:
         self.excluded_ids = self.workspace.load_exclusions()
@@ -459,6 +478,10 @@ class Controller:
                     self.filter_running = not self.filter_running
                     self.show_status_message(f"Toggle running filter: {self.filter_running}")
                     self.refresh()
+                elif key == ord("O"):
+                    self.filter_outdated = not self.filter_outdated
+                    self.show_status_message(f"Toggle outdated filter: {self.filter_outdated}")
+                    self.refresh()
                 elif ord("1") <= key <= ord("9"):
                     idx = int(chr(key)) - 1
                     all_filters = self.default_filters + self.custom_filters
@@ -618,9 +641,14 @@ class Controller:
             current_x += len(filter_str)
             
         self.stdscr.addstr(filter_y, current_x, "[+] Add Filter", curses.color_pair(4))
-        
+
+        current_x += 15
         if self.filter_running:
-             self.stdscr.addstr(filter_y, current_x + 15, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
+             self.stdscr.addstr(filter_y, current_x, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
+             current_x += 18
+
+        if self.filter_outdated:
+             self.stdscr.addstr(filter_y, current_x, "[O: Outdated Only]", curses.color_pair(2) | curses.A_REVERSE)
 
         self.stdscr.hline(list_start_y - 1, 0, curses.ACS_HLINE, max_x)
 
@@ -694,7 +722,7 @@ class Controller:
             "p: Pause", "r: Resume", "u: Update",
             f"1-{len(all_filters)}: Toggle Filters", "+: Add Filter",
             "f: Toggle User Filter", "n: Rename User", "e: End Date", "E: Exclude",
-            "c: Create VMs", "d: Delete VMs", "R: Running Only", "s: SSH", "l: Logs", "q: Quit"
+            "c: Create VMs", "d: Delete VMs", "R: Running Only", "O: Outdated", "s: SSH", "l: Logs", "q: Quit"
         ]
         
         command_str = " | ".join(commands)
