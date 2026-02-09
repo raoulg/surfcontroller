@@ -42,6 +42,7 @@ class Action:
             items_to_process.append(item)
 
         total = len(items_to_process)
+        errors = 0
         for i, item in enumerate(items_to_process):
             if progress_callback:
                 progress_callback(i + 1, total)
@@ -49,7 +50,7 @@ class Action:
             timestamp = time.strftime("%d-%m-%Y %H:%M:%S")
 
             logger.info(
-                f"{timestamp} | {item.name} | {item.id} | active: {item.active} : Attempt to {do}..."
+                f"{item.name} | {item.id} | active: {item.active} : Attempt to {do}..."
             )
 
             full_url = f"{self.URL}/{item.id}/actions/{do}/"
@@ -60,20 +61,26 @@ class Action:
                 "X-CSRFTOKEN": self.CSRF_TOKEN,
             }
 
-            response = requests.post(full_url, headers=headers, data="{}")
+            try:
+                response = requests.post(full_url, headers=headers, data="{}")
 
-            if response.status_code == 400:
-                logger.warning(
-                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : Error {do}"
-                )
-                logger.warning(
-                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : {response.text}"
-                )
-            else:
-                logger.info(
-                    f"{timestamp} | {item.name} | {item.id} | active:{item.active} : Success {do}"
-                )
-        logger.info(f"Finished {do} for all workspaces")
+                if response.status_code >= 400:
+                    errors += 1
+                    logger.error(
+                        f"FAILED {do} {item.name}: Status {response.status_code} - {response.text}"
+                    )
+                else:
+                    logger.info(
+                        f"SUCCESS {do} {item.name}"
+                    )
+            except Exception as e:
+                errors += 1
+                logger.error(f"EXCEPTION {do} {item.name}: {e}")
+
+        if errors > 0:
+            logger.error(f"Finished {do} with {errors} errors")
+        else:
+            logger.info(f"Finished {do} successfully for all workspaces")
 
 
 class Workspace:
@@ -204,126 +211,127 @@ class Workspace:
             )
             return None
 
-    def update_workspace(self, vm_id: str, data: dict) -> bool:
+    def update_workspace(self, vm_id: str, data: dict) -> tuple[bool, str]:
         """Updates a workspace with the given data."""
         url = f"{config['surf']['URL']}/{vm_id}/"
-        response = requests.patch(url, headers=self.headers, json=data)
+        try:
+            response = requests.patch(url, headers=self.headers, json=data)
+            if response.status_code == 200:
+                logger.info(f"Successfully updated workspace {vm_id}")
+                return True, "OK"
+            else:
+                msg = f"Status {response.status_code}: {response.text}"
+                logger.error(f"Failed to update workspace {vm_id}. {msg}")
+                return False, msg
+        except Exception as e:
+            logger.error(f"Exception updating workspace {vm_id}: {e}")
+            return False, str(e)
 
-        if response.status_code == 200:
-            logger.info(f"Successfully updated workspace {vm_id}")
-            return True
-        else:
-            logger.error(
-                f"Failed to update workspace {vm_id}. Status: {response.status_code}, Response: {response.text}"
-            )
-            return False
-
-    def create_workspace(self, data: dict) -> bool:
+    def create_workspace(self, data: dict) -> tuple[bool, str]:
         """Creates a new workspace."""
         url = f"{config['surf']['URL']}/"
-        response = requests.post(url, headers=self.headers, json=data)
+        try:
+            response = requests.post(url, headers=self.headers, json=data)
+            if response.status_code in [200, 201]:
+                logger.info("Successfully created workspace")
+                return True, "OK"
+            else:
+                msg = f"Status {response.status_code}: {response.text}"
+                logger.error(f"Failed to create workspace. {msg}")
+                return False, msg
+        except Exception as e:
+            logger.error(f"Exception creating workspace: {e}")
+            return False, str(e)
 
-        if response.status_code == 201:  # Assuming 201 Created
-            logger.info("Successfully created workspace")
-            return True
-        elif response.status_code == 200:  # Sometimes APIs return 200
-            logger.info("Successfully created workspace (200)")
-            return True
-        else:
-            logger.error(
-                f"Failed to create workspace. Status: {response.status_code}, Response: {response.text}"
-            )
-            return False
-
-    def delete_workspace(self, vm_id: str) -> bool:
+    def delete_workspace(self, vm_id: str) -> tuple[bool, str]:
         """Deletes a workspace by ID."""
         url = f"{config['surf']['URL']}/{vm_id}/"
-        response = requests.delete(url, headers=self.headers)
+        try:
+            response = requests.delete(url, headers=self.headers)
+            if response.status_code in [200, 204]:
+                logger.info(f"Successfully deleted workspace {vm_id}")
+                return True, "OK"
+            else:
+                msg = f"Status {response.status_code}: {response.text}"
+                logger.error(f"Failed to delete workspace {vm_id}. {msg}")
+                return False, msg
+        except Exception as e:
+            logger.error(f"Exception deleting workspace {vm_id}: {e}")
+            return False, str(e)
 
-        if response.status_code == 204:  # No Content usually means success for DELETE
-            logger.info(f"Successfully deleted workspace {vm_id}")
-            return True
-        elif response.status_code == 200:
-            logger.info(f"Successfully deleted workspace {vm_id} (200)")
-            return True
-        else:
-            logger.error(
-                f"Failed to delete workspace {vm_id}. Status: {response.status_code}, Response: {response.text}"
-            )
-            return False
-
-    def create_template_from_vm(self, vm_id: str, vm_name: str) -> bool:
+    def create_template_from_vm(self, vm_id: str, vm_name: str) -> tuple[bool, str]:
         """Fetches full VM details and saves it as a creation template."""
         url = f"{config['surf']['URL']}/{vm_id}/"
-        response = requests.get(url, headers=self.headers)
-
-        if response.status_code != 200:
-            logger.error(f"Failed to fetch VM details for {vm_name}: {response.status_code}")
-            return False
-
-        vm_data = response.json()
-
-        # Extract required fields for creation
-        template = {
-            "co_id": vm_data.get("co_id"),
-            "wallet_id": vm_data.get("wallet_id"),
-            "description": "Template created from " + vm_name,
-            "name": "placeholder-name",
-            "end_time": "placeholder-endtime",
-            "meta": {}
-        }
-
-        # The key fields are inside 'meta' in the detailed response
-        source_meta = vm_data.get("meta", {})
-
-        meta_fields_to_copy = [
-            "application_offering_id",
-            "application_name",
-            "application_icon",
-            "application_type",
-            "subscription_tag",
-            "subscription_name",
-            "subscription_group_id",
-            "co_name",
-            "subscription_resource_type",
-            "flavours",
-            "storages",
-            "ips",
-            "networks",
-            "dataset_names",
-            "dataset_ids",
-            "interactive_parameters"
-        ]
-
-        for field in meta_fields_to_copy:
-            if field in source_meta:
-                if field == "flavours":
-                    cleaned_flavours = []
-                    for f in source_meta[field]:
-                        cleaned_flavours.append({
-                            "id": f.get("id"),
-                            "name": f.get("name"),
-                            "category": f.get("category")
-                        })
-                    template["meta"][field] = cleaned_flavours
-                else:
-                    template["meta"][field] = source_meta[field]
-
-        template["meta"]["host_name"] = "placeholder-hostname"
-
-        # Ensure templates directory exists
-        templates_dir = Path("templates")
-        templates_dir.mkdir(exist_ok=True)
-
-        output_file = templates_dir / f"template_{vm_name}.json"
         try:
+            response = requests.get(url, headers=self.headers)
+
+            if response.status_code != 200:
+                msg = f"Status {response.status_code}: {response.text}"
+                logger.error(f"Failed to fetch VM details for {vm_name}: {msg}")
+                return False, msg
+
+            vm_data = response.json()
+
+            # Extract required fields for creation
+            template = {
+                "co_id": vm_data.get("co_id"),
+                "wallet_id": vm_data.get("wallet_id"),
+                "description": "Template created from " + vm_name,
+                "name": "placeholder-name",
+                "end_time": "placeholder-endtime",
+                "meta": {}
+            }
+
+            # The key fields are inside 'meta' in the detailed response
+            source_meta = vm_data.get("meta", {})
+
+            meta_fields_to_copy = [
+                "application_offering_id",
+                "application_name",
+                "application_icon",
+                "application_type",
+                "subscription_tag",
+                "subscription_name",
+                "subscription_group_id",
+                "co_name",
+                "subscription_resource_type",
+                "flavours",
+                "storages",
+                "ips",
+                "networks",
+                "dataset_names",
+                "dataset_ids",
+                "interactive_parameters"
+            ]
+
+            for field in meta_fields_to_copy:
+                if field in source_meta:
+                    if field == "flavours":
+                        cleaned_flavours = []
+                        for f in source_meta[field]:
+                            cleaned_flavours.append({
+                                "id": f.get("id"),
+                                "name": f.get("name"),
+                                "category": f.get("category")
+                            })
+                        template["meta"][field] = cleaned_flavours
+                    else:
+                        template["meta"][field] = source_meta[field]
+
+            template["meta"]["host_name"] = "placeholder-hostname"
+
+            # Ensure templates directory exists
+            templates_dir = Path("templates")
+            templates_dir.mkdir(exist_ok=True)
+
+            output_file = templates_dir / f"template_{vm_name}.json"
             with output_file.open("w") as f:
                 json.dump(template, f, indent=2)
             logger.info(f"Successfully created template at {output_file}")
-            return True
+            return True, str(output_file)
         except Exception as e:
-            logger.error(f"Failed to write template file: {e}")
-            return False
+            logger.error(f"Failed to create template: {e}")
+            return False, str(e)
 
     def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:

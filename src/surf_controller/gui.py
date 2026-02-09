@@ -289,12 +289,11 @@ class Controller:
         if len(selected_vms) == 1:
             vm = selected_vms[0]
             self.show_status_message(f"Creating template from {vm.name}...", "busy")
-            if self.workspace.create_template_from_vm(vm.id, vm.name):
-                self.show_status_message(
-                    f"Template created: templates/template_{vm.name}.json", "success"
-                )
+            success, message = self.workspace.create_template_from_vm(vm.id, vm.name)
+            if success:
+                self.show_status_message(f"Template created: {message}", "success")
             else:
-                self.show_status_message(f"Failed to create template for {vm.name}", "error")
+                self.show_status_message(f"Failed: {message[:50]}", "error")
         elif len(selected_vms) > 1:
             self.show_status_message("Please select only one VM to create a template", "error")
         else:
@@ -302,12 +301,11 @@ class Controller:
             if self.current_row < len(self.vms):
                 vm = self.vms[self.current_row]
                 self.show_status_message(f"Creating template from {vm.name}...", "busy")
-                if self.workspace.create_template_from_vm(vm.id, vm.name):
-                    self.show_status_message(
-                        f"Template created: templates/template_{vm.name}.json", "success"
-                    )
+                success, message = self.workspace.create_template_from_vm(vm.id, vm.name)
+                if success:
+                    self.show_status_message(f"Template created: {message}", "success")
                 else:
-                    self.show_status_message(f"Failed to create template for {vm.name}", "error")
+                    self.show_status_message(f"Failed: {message[:50]}", "error")
             else:
                 self.show_status_message("No VM selected", "error")
 
@@ -356,12 +354,13 @@ class Controller:
                 self.stdscr.addstr(2 + i, 0, f"Updating {vm.name}...")
                 self.stdscr.refresh()
 
-                if self.workspace.update_workspace(vm.id, {"end_time": iso_date}):
+                success, message = self.workspace.update_workspace(vm.id, {"end_time": iso_date})
+                if success:
                     self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
                     success_count += 1
-                    # Removed redundant update_single_vm to prevent glitches and speed up
                 else:
-                    self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
+                    self.stdscr.addstr(2 + i, 40, f"FAILED: {message[:40]}", curses.color_pair(1))
+                    logger.error(f"Failed to update {vm.name}: {message}")
 
                 self.draw_progress_bar(i + 1, total, 2 + total + 1)
 
@@ -428,11 +427,13 @@ class Controller:
             self.stdscr.addstr(2 + i, 0, f"Deleting {vm.name}...")
             self.stdscr.refresh()
 
-            if self.workspace.delete_workspace(vm.id):
+            success, message = self.workspace.delete_workspace(vm.id)
+            if success:
                 self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
                 success_count += 1
             else:
-                self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
+                self.stdscr.addstr(2 + i, 40, f"FAILED: {message[:40]}", curses.color_pair(1))
+                logger.error(f"Failed to delete {vm.name}: {message}")
 
             self.draw_progress_bar(i + 1, total, 2 + total + 1)
 
@@ -463,10 +464,14 @@ class Controller:
 
         def update_logs():
             while True:
-                with open(self.log_file, "r") as f:
-                    new_logs = f.readlines()[-10:]
-                with self.log_lock:
-                    self.logs = new_logs
+                try:
+                    if self.log_file.exists():
+                        with open(self.log_file, "r") as f:
+                            new_logs = f.readlines()[-20:]
+                        with self.log_lock:
+                            self.logs = new_logs
+                except Exception:
+                    pass
                 time.sleep(1)  # Check for new logs every second
 
         log_thread = threading.Thread(target=update_logs, daemon=True)
@@ -747,15 +752,14 @@ class Controller:
             spinner_char = (
                 self.spinner_chars[self.spinner_idx] if self.is_updating else " "
             )
-            status_color = (
-                curses.color_pair(2)
-                if "Success" in self.status_message
-                else (
-                    curses.color_pair(1)
-                    if "Error" in self.status_message
-                    else curses.color_pair(4)
-                )
-            )
+            
+            msg_upper = self.status_message.upper()
+            if any(word in msg_upper for word in ["SUCCESS", "OK", "COMPLETE"]):
+                status_color = curses.color_pair(2)
+            elif any(word in msg_upper for word in ["ERROR", "FAILED", "EXCEPTION", "WARNING"]):
+                status_color = curses.color_pair(1) | curses.A_BOLD
+            else:
+                status_color = curses.color_pair(4)
 
             self.stdscr.addstr(3, 2, f"[{spinner_char}] ", curses.A_BOLD)
             self.stdscr.addstr(3, 6, self.status_message, status_color)
@@ -932,13 +936,31 @@ class Controller:
 
         # Display logs if enabled
         if self.show_logs:
-            # Overlay logs? Or replace list?
-            # Let's overlay at the bottom of the list area
-            log_start_y = max_y - 12
-            self.stdscr.addstr(log_start_y, 0, "=== LOGS ===", curses.A_BOLD)
-            for idx, log in enumerate(self.logs[-10:]):
-                if log_start_y + 1 + idx < max_y:
-                    self.stdscr.addstr(log_start_y + 1 + idx, 0, log.strip())
+            # Show up to 15 lines of logs
+            log_count = min(len(self.logs), 15)
+            log_start_y = max_y - log_count - 5
+            
+            # Draw a separator
+            try:
+                self.stdscr.hline(log_start_y - 1, 0, "=", max_x)
+                self.stdscr.addstr(log_start_y - 1, 2, " LOGS (Last 20 events) ", curses.A_BOLD)
+                
+                for idx, log in enumerate(self.logs[-log_count:]):
+                    display_idx = log_start_y + idx
+                    if display_idx < max_y - 4:
+                        clean_log = log.strip()
+                        # Simple error detection for highlighting
+                        style = curses.color_pair(4)
+                        if any(err in clean_log.upper() for err in ["ERROR", "FAILED", "EXCEPTION", "400", "500"]):
+                            style = curses.color_pair(1) | curses.A_BOLD
+                        
+                        # Truncate if too long
+                        if len(clean_log) > max_x - 1:
+                            clean_log = clean_log[:max_x - 4] + "..."
+                            
+                        self.stdscr.addstr(display_idx, 0, clean_log, style)
+            except curses.error:
+                pass
 
         self.stdscr.refresh()
 
@@ -949,14 +971,10 @@ class Controller:
             return
 
         try:
-            # Update status line (row 2)
-            self.stdscr.move(2, 0)
-            self.stdscr.clrtoeol()
-            self.stdscr.addstr(2, 0, "Status: ", curses.A_BOLD)
-            self.stdscr.addstr(2, 8, message)
-            self.stdscr.refresh()
-        except curses.error as e:
-            logger.debug(f"Error displaying status message: {e}")
+            # Just trigger a redraw to update the Notification Center
+            self.print_menu()
+        except Exception as e:
+            logger.debug(f"Error triggering redraw: {e}")
 
     def ssh_to_vm(self, vm):
         if vm.ip:
@@ -1280,11 +1298,13 @@ class CreationWizard:
             self.stdscr.addstr(4 + idx, 0, f"Creating {vm_name}...")
             self.stdscr.refresh()
 
-            if self.workspace.create_workspace(data):
+            success, message = self.workspace.create_workspace(data)
+            if success:
                 self.stdscr.addstr(4 + idx, 40, "OK", curses.color_pair(2))
                 success_count += 1
             else:
-                self.stdscr.addstr(4 + idx, 40, "FAILED", curses.color_pair(1))
+                self.stdscr.addstr(4 + idx, 40, f"FAILED: {message[:40]}", curses.color_pair(1))
+                logger.error(f"Failed to create {vm_name}: {message}")
 
             self.stdscr.refresh()
 
