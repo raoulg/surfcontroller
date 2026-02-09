@@ -171,9 +171,11 @@ class Controller:
         self.stdscr.addstr(0, 0, f"Current username: {self.username}")
         self.stdscr.addstr(2, 0, "Enter new username: ")
         self.stdscr.refresh()
+        self.stdscr.timeout(-1)
         curses.echo()
         new_username = self.stdscr.getstr(2, 20).decode("utf-8")
         curses.noecho()
+        self.stdscr.timeout(100)
         if new_username:
             # Update default filters: remove old username, add new one
             if self.username in self.default_filters:
@@ -198,12 +200,14 @@ class Controller:
         self.stdscr.addstr(0, 0, "Add Custom Filter")
         self.stdscr.addstr(2, 0, "Enter filter string: ")
         self.stdscr.refresh()
+        self.stdscr.timeout(-1)
         curses.echo()
         try:
             new_filter = self.stdscr.getstr(2, 21).decode("utf-8").strip()
         except Exception:
             new_filter = ""
         curses.noecho()
+        self.stdscr.timeout(100)
 
         if new_filter:
             if new_filter not in self.custom_filters:
@@ -289,9 +293,11 @@ class Controller:
         self.stdscr.clear()
         self.stdscr.addstr(0, 0, f"Updating end date for {len(selected_indices)} VMs")
         self.stdscr.addstr(2, 0, "Enter new end date (dd-mm-yyyy): ")
+        self.stdscr.timeout(-1)
         curses.echo()
         date_str = self.stdscr.getstr(2, 32).decode("utf-8")
         curses.noecho()
+        self.stdscr.timeout(100)
 
         if not date_str:
             self.show_status_message("Update cancelled")
@@ -337,7 +343,9 @@ class Controller:
                 0,
                 f"Finished. Updated {success_count}/{total}. Press any key to continue.",
             )
+            self.stdscr.timeout(-1)
             self.stdscr.getch()
+            self.stdscr.timeout(100)
 
             # Auto-refresh
             self.fetch_all()
@@ -369,14 +377,17 @@ class Controller:
         self.stdscr.addstr(6, 0, "Are you sure? (y/n): ")
         self.stdscr.refresh()
 
+        self.stdscr.timeout(-1)
         while True:
             key = self.stdscr.getch()
             if key == ord("y") or key == ord("Y"):
                 break
             elif key == ord("n") or key == ord("N") or key == 27:  # Esc
+                self.stdscr.timeout(100)
                 self.show_status_message("Deletion cancelled")
                 self.refresh()
                 return
+        self.stdscr.timeout(100)
 
         self.stdscr.clear()
         self.stdscr.addstr(0, 0, f"Deleting {len(selected_indices)} VMs...")
@@ -403,7 +414,9 @@ class Controller:
             0,
             f"Finished. Deleted {success_count}/{total}. Press any key to continue.",
         )
+        self.stdscr.timeout(-1)
         self.stdscr.getch()
+        self.stdscr.timeout(100)
 
         # Refresh list
         self.fetch_all()
@@ -935,8 +948,10 @@ class Controller:
             self.show_status_message(f"No IP address available for {vm.name}")
 
     def start_creation_wizard(self):
+        self.stdscr.timeout(-1)
         wizard = CreationWizard(self.stdscr, self.workspace, self.scriptdir, self)
         wizard.run()
+        self.stdscr.timeout(100)
         self.refresh()
 
 
