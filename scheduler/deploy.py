@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import subprocess
 import secrets
 import sys
@@ -16,6 +15,7 @@ DEFAULT_HOST_IP = "123.44.67.89"
 DEFAULT_USER = "yourusername"
 REMOTE_PATH = "/srv/shared/mads_demoserver"
 
+
 def load_env(env_path):
     config = {}
     if env_path.exists():
@@ -30,10 +30,12 @@ def load_env(env_path):
                         pass
     return config
 
+
 def save_env(env_path, config):
     with open(env_path, "w") as f:
         for key, value in config.items():
             f.write(f"{key}={value}\n")
+
 
 def check_env():
     """Ensures .env exists with WEB_PASSWORD and DEPLOY_HOST."""
@@ -56,23 +58,24 @@ def check_env():
     # Check DEPLOY_HOST
     # Check REMOTE_USER
     if "REMOTE_USER" not in config:
-        print(f"[*] REMOTE_USER not found.")
+        print("[*] REMOTE_USER not found.")
         user_input = input(f"Enter remote user [{DEFAULT_USER}]: ").strip()
         config["REMOTE_USER"] = user_input if user_input else DEFAULT_USER
         dirty = True
 
     # Check DEPLOY_HOST
     if "DEPLOY_HOST" not in config:
-        print(f"[*] DEPLOY_HOST not found.")
+        print("[*] DEPLOY_HOST not found.")
         host_input = input(f"Enter deployment host IP [{DEFAULT_HOST_IP}]: ").strip()
         config["DEPLOY_HOST"] = host_input if host_input else DEFAULT_HOST_IP
         dirty = True
-    
+
     if dirty:
         save_env(ENV_FILE, config)
         print(f"[*] Updated {ENV_FILE}")
-        
+
     return config
+
 
 def run_command(cmd, cwd=None, shell=False):
     """Runs a shell command and raises error on failure."""
@@ -82,27 +85,28 @@ def run_command(cmd, cwd=None, shell=False):
         # Here we use shell=True for complex commands or simple list for others.
         # Standardizing on string for display and list for execution where possible,
         # but for simplicity/piping rely on shell=True occasionally or splitting.
-        
+
         if isinstance(cmd, list):
             cmd_str = " ".join(cmd)
         else:
             cmd_str = cmd
             shell = True
-            
+
         subprocess.check_call(cmd if not shell else cmd_str, cwd=cwd, shell=shell)
     except subprocess.CalledProcessError as e:
         print(f"[!] Command failed: {e}")
         sys.exit(1)
 
+
 def main():
     print("--- Surf Scheduler Deployment ---")
-    
+
     # 1. Environment Setup
     config = check_env()
     deploy_host = config["DEPLOY_HOST"]
     deploy_user = config["REMOTE_USER"]
     remote_target = f"{deploy_user}@{deploy_host}"
-    
+
     print(f"[*] Target: {remote_target}")
     print(f"[*] Web Password: {config['WEB_PASSWORD'][:5]}...")
 
@@ -117,33 +121,34 @@ def main():
 
     # 3. Deploy Files
     print("\n--- Deploying Configuration Files ---")
-    
+
     # Copy docker-compose.deploy.yml -> surfcontroller.yml
     scp_cmd_1 = f"scp {COMPOSE_DEPLOY} {remote_target}:{REMOTE_PATH}/surfcontroller.yml"
     run_command(scp_cmd_1, shell=True)
-    
+
     # Copy .env
     scp_cmd_2 = f"scp {ENV_FILE} {remote_target}:{REMOTE_PATH}/.env"
     run_command(scp_cmd_2, shell=True)
 
     # 4. Remote Execution
     print("\n--- Restarting Remote Service ---")
-    
+
     remote_cmds = [
         f"cd {REMOTE_PATH}",
         "docker compose -f surfcontroller.yml pull",
         "docker compose -f surfcontroller.yml down",
         "docker compose -f surfcontroller.yml up -d",
-        "docker compose -f surfcontroller.yml ps"
+        "docker compose -f surfcontroller.yml ps",
     ]
-    
+
     # Join commands with && for safety
     remote_cmd_str = " && ".join(remote_cmds)
     ssh_cmd = f"ssh {remote_target} '{remote_cmd_str}'"
-    
+
     run_command(ssh_cmd, shell=True)
 
     print("\n[+] Deployment Complete!")
+
 
 if __name__ == "__main__":
     main()

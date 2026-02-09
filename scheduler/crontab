@@ -1,6 +1,7 @@
 # scheduler/crontab
 # Run the script every night at 21:00 (9 PM)
 # The script's output is redirected to logs.log inside the volume
+SURF_CONTROLLER_CONFIG_DIR=/config
 0 21 * * * /usr/local/bin/python /app/pause_job.py >> /var/log/cron.log 2>&1
 
 # An empty line is required at the end of the file

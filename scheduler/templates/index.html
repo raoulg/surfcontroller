@@ -71,7 +71,10 @@
 </head>
 
 <body>
-    <h1>Surf Controller Scheduler</h1>
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h1>Surf Controller Scheduler</h1>
+        <a href="{{ url_for('logs') }}" style="text-decoration: none; color: #007bff;">View Cron Logs</a>
+    </div>
     <p>Manage VM pause exclusions. VMs marked as <strong>Excluded</strong> will NOT be paused by the nightly schedule.
     </p>
 

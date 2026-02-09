@@ -15,16 +15,17 @@ from surf_controller.utils import config, logger
 Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
 
 
-
 class Action:
     def __init__(self):
         self.scriptdir = USER_CONFIG_DIR
         self.URL = config["surf"]["URL"]
+        self.AUTH_TOKEN = ""
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
             self.AUTH_TOKEN = self.auth_token_file.read_text().strip()
         else:
             logger.warning(f"API token not found at {self.auth_token_file}")
+        self.CSRF_TOKEN = ""
         self.csrf_token_file = self.scriptdir / config["files"]["csrf-token"]
         if self.csrf_token_file.exists():
             self.CSRF_TOKEN = self.csrf_token_file.read_text().strip()
@@ -39,14 +40,14 @@ class Action:
             if id_filter and item.name not in id_filter:
                 continue
             items_to_process.append(item)
-            
+
         total = len(items_to_process)
         for i, item in enumerate(items_to_process):
             if progress_callback:
                 progress_callback(i + 1, total)
-                
+
             timestamp = time.strftime("%d-%m-%Y %H:%M:%S")
-            
+
             logger.info(
                 f"{timestamp} | {item.name} | {item.id} | active: {item.active} : Attempt to {do}..."
             )
@@ -81,6 +82,7 @@ class Workspace:
         self.URL = (
             config["surf"]["URL"] + "/?application_type=Compute&deleted=false&limit=100"
         )
+        self.AUTH_TOKEN = ""
         self.auth_token_file = self.scriptdir / config["files"]["api-token"]
         if self.auth_token_file.exists():
             self.AUTH_TOKEN = self.auth_token_file.read_text().strip()
@@ -144,16 +146,16 @@ class Workspace:
                 self.save(data)
 
             results = []
-            
+
             for result in data["results"]:
                 meta = result["resource_meta"]
                 if "ip" in meta:
                     ip = meta["ip"]
                 else:
                     ip = "Not available"
-                
+
                 end_date = result.get("end_time", "")
-                
+
                 if self.filter and username and username not in result["name"]:
                     continue
                 vm_id = result["id"]
@@ -173,7 +175,7 @@ class Workspace:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
             return []
 
-    def get_workspace(self, vm_id: str) -> Optional[namedtuple]:
+    def get_workspace(self, vm_id: str) -> Optional[Data]:
         """Fetches data for a single workspace."""
         excluded_ids_set = self.load_exclusions()
         url = f"{config['surf']['URL']}/{vm_id}"
@@ -181,14 +183,13 @@ class Workspace:
 
         if response.status_code == 200:
             result = response.json()
-            
-            
+
             meta = result.get("resource_meta", {})
             ip = meta.get("ip", "Not available")
             end_date = result.get("end_time", "")
-            
+
             exclude_pause_status = vm_id in excluded_ids_set
-            
+
             return Data(
                 result["id"],
                 result["name"],
@@ -198,49 +199,57 @@ class Workspace:
                 end_date,
             )
         else:
-            logger.error(f"Failed to fetch workspace {vm_id}. Status: {response.status_code}")
+            logger.error(
+                f"Failed to fetch workspace {vm_id}. Status: {response.status_code}"
+            )
             return None
 
     def update_workspace(self, vm_id: str, data: dict) -> bool:
         """Updates a workspace with the given data."""
         url = f"{config['surf']['URL']}/{vm_id}/"
         response = requests.patch(url, headers=self.headers, json=data)
-        
+
         if response.status_code == 200:
             logger.info(f"Successfully updated workspace {vm_id}")
             return True
         else:
-            logger.error(f"Failed to update workspace {vm_id}. Status: {response.status_code}, Response: {response.text}")
+            logger.error(
+                f"Failed to update workspace {vm_id}. Status: {response.status_code}, Response: {response.text}"
+            )
             return False
 
     def create_workspace(self, data: dict) -> bool:
         """Creates a new workspace."""
         url = f"{config['surf']['URL']}/"
         response = requests.post(url, headers=self.headers, json=data)
-        
-        if response.status_code == 201: # Assuming 201 Created
+
+        if response.status_code == 201:  # Assuming 201 Created
             logger.info("Successfully created workspace")
             return True
-        elif response.status_code == 200: # Sometimes APIs return 200
+        elif response.status_code == 200:  # Sometimes APIs return 200
             logger.info("Successfully created workspace (200)")
             return True
         else:
-            logger.error(f"Failed to create workspace. Status: {response.status_code}, Response: {response.text}")
+            logger.error(
+                f"Failed to create workspace. Status: {response.status_code}, Response: {response.text}"
+            )
             return False
 
     def delete_workspace(self, vm_id: str) -> bool:
         """Deletes a workspace by ID."""
         url = f"{config['surf']['URL']}/{vm_id}/"
         response = requests.delete(url, headers=self.headers)
-        
-        if response.status_code == 204: # No Content usually means success for DELETE
+
+        if response.status_code == 204:  # No Content usually means success for DELETE
             logger.info(f"Successfully deleted workspace {vm_id}")
             return True
         elif response.status_code == 200:
             logger.info(f"Successfully deleted workspace {vm_id} (200)")
             return True
         else:
-            logger.error(f"Failed to delete workspace {vm_id}. Status: {response.status_code}, Response: {response.text}")
+            logger.error(
+                f"Failed to delete workspace {vm_id}. Status: {response.status_code}, Response: {response.text}"
+            )
             return False
 
     def save(self, data: dict):
@@ -268,7 +277,7 @@ class Workspace:
         """Loads workspace data from the cached CSV file."""
         if not self.OUTPUT_FILE.exists():
             return []
-            
+
         excluded_ids_set = self.load_exclusions()
         results = []
         try:
@@ -279,8 +288,12 @@ class Workspace:
                     vm_id = row["id"]
                     exclude_pause_status = vm_id in excluded_ids_set
                     # CSV might preserve strings, convert active to boolean
-                    active = row["active"].lower() == 'true' if isinstance(row["active"], str) else bool(row["active"])
-                    
+                    active = (
+                        row["active"].lower() == "true"
+                        if isinstance(row["active"], str)
+                        else bool(row["active"])
+                    )
+
                     results.append(
                         Data(
                             vm_id,
@@ -288,7 +301,7 @@ class Workspace:
                             active,
                             row["ip"],
                             exclude_pause_status,
-                            "", # End date not currently saved in CSV, maybe add later or fetch fresh
+                            "",  # End date not currently saved in CSV, maybe add later or fetch fresh
                         )
                     )
             logger.info(f"Loaded {len(results)} workspaces from cache")
@@ -296,7 +309,6 @@ class Workspace:
         except Exception as e:
             logger.error(f"Failed to load from cache: {e}")
             return []
-
 
 
 def first_run(stdscr: curses.window):

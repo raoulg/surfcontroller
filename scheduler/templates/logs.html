@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logs - Surf Controller Scheduler</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+        }
+
+        .nav a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+
+        .nav a:hover {
+            text-decoration: underline;
+        }
+
+        pre {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-family: monospace;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav">
+        <a href="{{ url_for('index') }}">← Back to Dashboard</a>
+    </div>
+
+    <h1>Cron Logs</h1>
+    <p>Last 200 lines of <code>/var/log/cron.log</code>:</p>
+
+    <pre>{{ log_content }}</pre>
+
+    <div style="margin-top: 20px;">
+        <button onclick="window.location.reload();" style="padding: 10px 20px; cursor: pointer;">Refresh Logs</button>
+    </div>
+</body>
+
+</html>

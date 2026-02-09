@@ -44,21 +44,21 @@ class Controller:
         if not self.vms:
             # Fallback if cache empty or failed
             self.vms = []
-        
+
         # Trigger background update is moved to __call__ to ensure stdscr exists
-        
+
         self.all_vms = self.vms
         self.all_vms = self.vms
         self.current_row = 0
         self.current_page = 0
         self.selected = [False] * len(self.vms)
         self.excluded_ids = self.workspace.load_exclusions()
-        
+
         # Filtering
         self.default_filters = ["UOS1", "UOS2", "UOS3"]
         if self.username:
             self.default_filters.append(self.username)
-        
+
         self.FILTERS_FILE = self.scriptdir / "filters.json"
         self.custom_filters = []
         if self.FILTERS_FILE.exists():
@@ -75,7 +75,7 @@ class Controller:
 
         # Status
         self.status_message = ""
-        self.status_type = "info" # info, success, error, busy
+        self.status_type = "info"  # info, success, error, busy
         self.last_refreshed = time.strftime("%H:%M:%S")
 
     def apply_filters(self):
@@ -88,11 +88,11 @@ class Controller:
                     if f.lower() in vm.name.lower():
                         self.vms.append(vm)
                         break
-        
+
         # Apply username filter if enabled (legacy filter)
         if self.workspace.filter and self.username:
-             self.vms = [vm for vm in self.vms if self.username in vm.name]
-             
+            self.vms = [vm for vm in self.vms if self.username in vm.name]
+
         # Apply running filter
         if self.filter_running:
             self.vms = [vm for vm in self.vms if vm.active]
@@ -100,6 +100,7 @@ class Controller:
         # Apply outdated filter
         if self.filter_outdated:
             from datetime import datetime
+
             now = datetime.now()
             outdated_vms = []
             for vm in self.vms:
@@ -119,7 +120,7 @@ class Controller:
         self.excluded_ids = self.workspace.load_exclusions()
         self.apply_filters()
         self.current_row = 0
-        self.current_page = 0 # Reset page on refresh (filtering)
+        self.current_page = 0  # Reset page on refresh (filtering)
         self.selected = [False] * len(self.vms)
         self.stdscr.refresh()
 
@@ -141,10 +142,12 @@ class Controller:
     def start_background_update(self, scope="all", vm_ids=None):
         if self.is_updating:
             return
-        
+
         self.is_updating = True
         self.show_status_message("Updating in background...")
-        t = threading.Thread(target=self._background_fetch, args=(scope, vm_ids), daemon=True)
+        t = threading.Thread(
+            target=self._background_fetch, args=(scope, vm_ids), daemon=True
+        )
         t.start()
 
     def _background_fetch(self, scope, vm_ids):
@@ -177,13 +180,13 @@ class Controller:
                 self.default_filters.remove(self.username)
                 if self.username in self.active_filters:
                     self.active_filters.remove(self.username)
-            
+
             self.username = new_username
             self.usernamefile.write_text(new_username)
-            
+
             if new_username not in self.default_filters:
                 self.default_filters.append(new_username)
-                
+
             self.show_status_message(f"Username updated to: {new_username}")
             logger.info(f"Username updated to: {new_username}")
             self.refresh()
@@ -201,7 +204,7 @@ class Controller:
         except Exception:
             new_filter = ""
         curses.noecho()
-        
+
         if new_filter:
             if new_filter not in self.custom_filters:
                 self.custom_filters.append(new_filter)
@@ -209,7 +212,7 @@ class Controller:
                     with open(self.FILTERS_FILE, "w") as f:
                         json.dump(self.custom_filters, f)
                     self.show_status_message(f"Added filter: {new_filter}")
-                    self.active_filters.add(new_filter) # Auto-activate
+                    self.active_filters.add(new_filter)  # Auto-activate
                 except Exception as e:
                     logger.error(f"Failed to save filters: {e}")
                     self.show_status_message(f"Error saving filter: {e}")
@@ -217,23 +220,24 @@ class Controller:
                 self.show_status_message("Filter already exists")
         else:
             self.show_status_message("Cancelled")
-            
+
         self.refresh()
 
     def draw_progress_bar(self, current, total, y_pos=None):
         # Ignore y_pos, draw in Notification Center (Row 4)
         height, width = self.stdscr.getmaxyx()
-        
+
         # Notification Center width is roughly width - 4
-        bar_area_width = width - 6 
-        if bar_area_width < 10: bar_area_width = 10
-        
+        bar_area_width = width - 6
+        if bar_area_width < 10:
+            bar_area_width = 10
+
         percent = current / total
         filled_len = int(bar_area_width * percent)
-        
+
         bar = "#" * filled_len + "-" * (bar_area_width - filled_len)
-        percent_str = f"{percent*100:.0f}%"
-        
+        percent_str = f"{percent * 100:.0f}%"
+
         try:
             # Clear line first
             self.stdscr.move(4, 2)
@@ -244,13 +248,37 @@ class Controller:
             display_str = f"[{bar}] {percent_str}"
             # Ensure it fits
             if len(display_str) > width - 4:
-                display_str = display_str[:width-5]
-            
-            self.stdscr.addstr(4, 2, display_str, curses.color_pair(3)) # Blue for progress
-            self.stdscr.addstr(4, width - 2, "│") # Restore right border if overwritten?
+                display_str = display_str[: width - 5]
+
+            self.stdscr.addstr(
+                4, 2, display_str, curses.color_pair(3)
+            )  # Blue for progress
+            self.stdscr.addstr(
+                4, width - 2, "│"
+            )  # Restore right border if overwritten?
             self.stdscr.refresh()
         except curses.error:
             pass
+
+    def toggle_pause_exclusion(self):
+        selected_vms = [vm for i, vm in enumerate(self.vms) if self.selected[i]]
+        if not selected_vms:
+            self.show_status_message("No VMs selected.")
+            return
+
+        self.show_status_message(f"Toggling exclusion for {len(selected_vms)} VMs...", "busy")
+        
+        exclusions = self.workspace.load_exclusions()
+        for vm in selected_vms:
+            if vm.id in exclusions:
+                exclusions.remove(vm.id)
+            else:
+                exclusions.add(vm.id)
+        
+        self.workspace.save_exclusions(exclusions)
+        self.excluded_ids = exclusions
+        self.show_status_message(f"Updated exclusions for {len(selected_vms)} VMs.", "success")
+        self.stdscr.refresh()
 
     def batch_update_end_date(self):
         selected_indices = [i for i, s in enumerate(self.selected) if s]
@@ -264,7 +292,7 @@ class Controller:
         curses.echo()
         date_str = self.stdscr.getstr(2, 32).decode("utf-8")
         curses.noecho()
-        
+
         if not date_str:
             self.show_status_message("Update cancelled")
             self.refresh()
@@ -272,50 +300,55 @@ class Controller:
 
         try:
             from datetime import datetime
+
             dt = datetime.strptime(date_str, "%d-%m-%Y")
             now = datetime.now()
             if dt.date() < now.date():
                 self.show_status_message("Error: Date cannot be in the past")
                 self.refresh()
                 return
-            
+
             dt = dt.replace(hour=23, minute=59, second=59)
             iso_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-            
+
             self.stdscr.clear()
             self.stdscr.addstr(0, 0, f"Updating {len(selected_indices)} VMs...")
             self.stdscr.refresh()
-            
+
             success_count = 0
             total = len(selected_indices)
-            
+
             for i, idx in enumerate(selected_indices):
                 vm = self.vms[idx]
                 self.stdscr.addstr(2 + i, 0, f"Updating {vm.name}...")
                 self.stdscr.refresh()
-                
+
                 if self.workspace.update_workspace(vm.id, {"end_time": iso_date}):
                     self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
                     success_count += 1
                     # Removed redundant update_single_vm to prevent glitches and speed up
                 else:
                     self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
-                
+
                 self.draw_progress_bar(i + 1, total, 2 + total + 1)
-            
-            self.stdscr.addstr(2 + total + 3, 0, f"Finished. Updated {success_count}/{total}. Press any key to continue.")
+
+            self.stdscr.addstr(
+                2 + total + 3,
+                0,
+                f"Finished. Updated {success_count}/{total}. Press any key to continue.",
+            )
             self.stdscr.getch()
-            
+
             # Auto-refresh
             self.fetch_all()
             self.show_status_message(f"Updated {success_count} VMs")
-            
+
         except ValueError:
             self.show_status_message("Error: Invalid date format. Use dd-mm-yyyy")
         except Exception as e:
             self.show_status_message(f"Error: {e}")
             logger.error(f"Error updating end date: {e}")
-        
+
         self.refresh()
 
     def delete_selected_vms(self):
@@ -326,43 +359,52 @@ class Controller:
 
         # Confirmation Dialog
         self.stdscr.clear()
-        self.stdscr.addstr(2, 0, f"WARNING: You are about to DELETE {len(selected_indices)} VMs!", curses.color_pair(1) | curses.A_BOLD)
+        self.stdscr.addstr(
+            2,
+            0,
+            f"WARNING: You are about to DELETE {len(selected_indices)} VMs!",
+            curses.color_pair(1) | curses.A_BOLD,
+        )
         self.stdscr.addstr(4, 0, "This action is IRREVERSIBLE.")
         self.stdscr.addstr(6, 0, "Are you sure? (y/n): ")
         self.stdscr.refresh()
-        
+
         while True:
             key = self.stdscr.getch()
-            if key == ord('y') or key == ord('Y'):
+            if key == ord("y") or key == ord("Y"):
                 break
-            elif key == ord('n') or key == ord('N') or key == 27: # Esc
+            elif key == ord("n") or key == ord("N") or key == 27:  # Esc
                 self.show_status_message("Deletion cancelled")
                 self.refresh()
                 return
-        
+
         self.stdscr.clear()
         self.stdscr.addstr(0, 0, f"Deleting {len(selected_indices)} VMs...")
         self.stdscr.refresh()
-        
+
         success_count = 0
         total = len(selected_indices)
-        
+
         for i, idx in enumerate(selected_indices):
             vm = self.vms[idx]
             self.stdscr.addstr(2 + i, 0, f"Deleting {vm.name}...")
             self.stdscr.refresh()
-            
+
             if self.workspace.delete_workspace(vm.id):
                 self.stdscr.addstr(2 + i, 40, "OK", curses.color_pair(2))
                 success_count += 1
             else:
                 self.stdscr.addstr(2 + i, 40, "FAILED", curses.color_pair(1))
-            
+
             self.draw_progress_bar(i + 1, total, 2 + total + 1)
-            
-        self.stdscr.addstr(2 + total + 3, 0, f"Finished. Deleted {success_count}/{total}. Press any key to continue.")
+
+        self.stdscr.addstr(
+            2 + total + 3,
+            0,
+            f"Finished. Deleted {success_count}/{total}. Press any key to continue.",
+        )
         self.stdscr.getch()
-        
+
         # Refresh list
         self.fetch_all()
         self.show_status_message(f"Deleted {success_count} VMs")
@@ -392,11 +434,11 @@ class Controller:
 
         self.print_menu()
 
-        self.stdscr.timeout(100) # 100ms timeout for non-blocking UI
-        
+        self.stdscr.timeout(100)  # 100ms timeout for non-blocking UI
+
         # Start background update now that UI is ready
         self.start_background_update("all")
-        
+
         self.print_menu()
 
         while True:
@@ -444,11 +486,14 @@ class Controller:
 
             if key != -1:
                 needs_redraw = True
-                
+
                 if key == ord("j") and self.current_row < len(self.vms) - 1:
                     if self.current_row < len(self.vms) - 1:
                         self.current_row += 1
-                        if self.current_row >= (self.current_page + 1) * self.rows_per_page:
+                        if (
+                            self.current_row
+                            >= (self.current_page + 1) * self.rows_per_page
+                        ):
                             self.current_page += 1
                 elif key == ord("J"):
                     if self.current_page < self.max_pages:
@@ -464,7 +509,9 @@ class Controller:
                         self.current_page -= 1
                         self.current_row = self.current_page * self.rows_per_page
                 elif key == ord("\n") or key == ord(" "):
-                    self.selected[self.current_row] = not self.selected[self.current_row]
+                    self.selected[self.current_row] = not self.selected[
+                        self.current_row
+                    ]
                 elif key == ord("a"):
                     if all(self.selected):
                         self.selected = [False] * len(self.vms)
@@ -472,15 +519,21 @@ class Controller:
                         self.selected = [True] * len(self.vms)
                 elif key == ord("f"):
                     self.workspace.filter = not self.workspace.filter
-                    self.show_status_message(f"Toggle user filtering: {self.workspace.filter}")
+                    self.show_status_message(
+                        f"Toggle user filtering: {self.workspace.filter}"
+                    )
                     self.refresh()
                 elif key == ord("R"):
                     self.filter_running = not self.filter_running
-                    self.show_status_message(f"Toggle running filter: {self.filter_running}")
+                    self.show_status_message(
+                        f"Toggle running filter: {self.filter_running}"
+                    )
                     self.refresh()
                 elif key == ord("O"):
                     self.filter_outdated = not self.filter_outdated
-                    self.show_status_message(f"Toggle outdated filter: {self.filter_outdated}")
+                    self.show_status_message(
+                        f"Toggle outdated filter: {self.filter_outdated}"
+                    )
                     self.refresh()
                 elif ord("1") <= key <= ord("9"):
                     idx = int(chr(key)) - 1
@@ -498,30 +551,60 @@ class Controller:
                     self.start_background_update("all")
                 elif key == ord("p"):
                     idlist = [
-                        self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                        self.vms[i].name
+                        for i in range(len(self.vms))
+                        if self.selected[i]
                     ]
                     if idlist:
                         self.show_status_message(f"Pausing {len(idlist)} VMs...")
                         height, width = self.stdscr.getmaxyx()
                         progress_y = height - 4
-                        self.action("pause", self.vms, idlist, progress_callback=lambda c, t: self.draw_progress_bar(c, t, progress_y))
-                        vm_ids_to_update = [self.vms[i].id for i in range(len(self.vms)) if self.selected[i]]
+                        self.action(
+                            "pause",
+                            self.vms,
+                            idlist,
+                            progress_callback=lambda c, t: self.draw_progress_bar(
+                                c, t, progress_y
+                            ),
+                        )
+                        vm_ids_to_update = [
+                            self.vms[i].id
+                            for i in range(len(self.vms))
+                            if self.selected[i]
+                        ]
                         self.start_background_update("single", vm_ids_to_update)
-                        self.show_status_message(f"Paused {len(idlist)} VMs. Refreshing...")
+                        self.show_status_message(
+                            f"Paused {len(idlist)} VMs. Refreshing..."
+                        )
                     else:
                         self.show_status_message("No VMs selected.")
                 elif key == ord("r"):
                     idlist = [
-                        self.vms[i].name for i in range(len(self.vms)) if self.selected[i]
+                        self.vms[i].name
+                        for i in range(len(self.vms))
+                        if self.selected[i]
                     ]
                     if idlist:
                         self.show_status_message(f"Resuming {len(idlist)} VMs...")
                         height, width = self.stdscr.getmaxyx()
                         progress_y = height - 4
-                        self.action("resume", self.vms, idlist, progress_callback=lambda c, t: self.draw_progress_bar(c, t, progress_y))
-                        vm_ids_to_update = [self.vms[i].id for i in range(len(self.vms)) if self.selected[i]]
+                        self.action(
+                            "resume",
+                            self.vms,
+                            idlist,
+                            progress_callback=lambda c, t: self.draw_progress_bar(
+                                c, t, progress_y
+                            ),
+                        )
+                        vm_ids_to_update = [
+                            self.vms[i].id
+                            for i in range(len(self.vms))
+                            if self.selected[i]
+                        ]
                         self.start_background_update("single", vm_ids_to_update)
-                        self.show_status_message(f"Resumed {len(idlist)} VMs. Refreshing...")
+                        self.show_status_message(
+                            f"Resumed {len(idlist)} VMs. Refreshing..."
+                        )
                     else:
                         self.show_status_message("No VMs selected.")
                 elif key == ord("n"):
@@ -532,13 +615,15 @@ class Controller:
                     self.batch_update_end_date()
                 elif key == ord("c"):
                     self.start_creation_wizard()
-                    self.start_background_update("all") # Check for new VMs
+                    self.start_background_update("all")  # Check for new VMs
                 elif key == ord("d"):
                     self.delete_selected_vms()
                 elif key == ord("l"):
                     self.show_logs = not self.show_logs
                 elif key == ord("s"):
-                    selected_vms = [vm for i, vm in enumerate(self.vms) if self.selected[i]]
+                    selected_vms = [
+                        vm for i, vm in enumerate(self.vms) if self.selected[i]
+                    ]
                     if len(selected_vms) == 1:
                         self.ssh_to_vm(selected_vms[0])
                     elif len(selected_vms) > 1:
@@ -557,14 +642,21 @@ class Controller:
                     self.spinner_idx = (self.spinner_idx + 1) % len(self.spinner_chars)
                     self.last_spinner_update = time.time()
                     try:
-                        self.stdscr.addstr(3, 2, f"[{self.spinner_chars[self.spinner_idx]}]", curses.A_BOLD)
+                        self.stdscr.addstr(
+                            3,
+                            2,
+                            f"[{self.spinner_chars[self.spinner_idx]}]",
+                            curses.A_BOLD,
+                        )
                         self.stdscr.refresh()
-                    except: pass
+                    except Exception:
+                        pass
             else:
-                 # Clear spinner spot if not updating
-                 try:
+                # Clear spinner spot if not updating
+                try:
                     self.stdscr.addstr(3, 2, "[ ]", curses.A_BOLD)
-                 except: pass
+                except Exception:
+                    pass
 
     def print_menu(self) -> None:
         self.stdscr.clear()
@@ -573,13 +665,13 @@ class Controller:
 
         # Layout configuration
         header_height = 1
-        status_height = 6 # Notification Center
+        status_height = 6  # Notification Center
         filter_height = 3
         footer_height = 4
-        
+
         list_start_y = header_height + status_height + filter_height
         list_height = max_y - list_start_y - footer_height
-        
+
         self.rows_per_page = list_height
         self.max_pages = max(0, (len(self.vms) - 1) // self.rows_per_page)
 
@@ -591,7 +683,7 @@ class Controller:
         # 2. Notification Center (Rows 1-6)
         # Box drawing
         try:
-            self.stdscr.attron(curses.color_pair(4)) # White
+            self.stdscr.attron(curses.color_pair(4))  # White
             # Top Border
             self.stdscr.addstr(1, 0, "┌" + "─" * (max_x - 2) + "┐")
             # Side Borders
@@ -601,22 +693,34 @@ class Controller:
             # Bottom Border
             self.stdscr.addstr(6, 0, "└" + "─" * (max_x - 2) + "┘")
             self.stdscr.attroff(curses.color_pair(4))
-            
+
             # Content
             # Row 2: Title
             self.stdscr.addstr(2, 2, "NOTIFICATIONS", curses.A_BOLD)
-            self.stdscr.addstr(2, max_x - 20, f"Refreshed: {self.last_refreshed}", curses.A_DIM)
-            
+            self.stdscr.addstr(
+                2, max_x - 20, f"Refreshed: {self.last_refreshed}", curses.A_DIM
+            )
+
             # Row 3: Status Message & Spinner
-            spinner_char = self.spinner_chars[self.spinner_idx] if self.is_updating else " "
-            status_color = curses.color_pair(2) if "Success" in self.status_message else (curses.color_pair(1) if "Error" in self.status_message else curses.color_pair(4))
-            
+            spinner_char = (
+                self.spinner_chars[self.spinner_idx] if self.is_updating else " "
+            )
+            status_color = (
+                curses.color_pair(2)
+                if "Success" in self.status_message
+                else (
+                    curses.color_pair(1)
+                    if "Error" in self.status_message
+                    else curses.color_pair(4)
+                )
+            )
+
             self.stdscr.addstr(3, 2, f"[{spinner_char}] ", curses.A_BOLD)
             self.stdscr.addstr(3, 6, self.status_message, status_color)
-            
+
             # Row 4: Progress Bar (Placeholder if empty)
             # draw_progress_bar writes here directly
-            
+
         except curses.error:
             pass
 
@@ -624,31 +728,45 @@ class Controller:
         filter_y = 7
         filter_title = "Filters: "
         self.stdscr.addstr(filter_y, 0, filter_title, curses.A_BOLD)
-        
+
         current_x = len(filter_title)
-        
+
         # Combine default and custom filters for display and indexing
         all_filters = self.default_filters + self.custom_filters
-        
+
         for idx, f in enumerate(all_filters):
-            style = curses.color_pair(2) if f in self.active_filters else curses.color_pair(4)
+            style = (
+                curses.color_pair(2)
+                if f in self.active_filters
+                else curses.color_pair(4)
+            )
             if f in self.active_filters:
                 style = style | curses.A_REVERSE
-            
+
             # Add number hint [N]
-            filter_str = f"[{idx+1}:{f}] "
+            filter_str = f"[{idx + 1}:{f}] "
             self.stdscr.addstr(filter_y, current_x, filter_str, style)
             current_x += len(filter_str)
-            
+
         self.stdscr.addstr(filter_y, current_x, "[+] Add Filter", curses.color_pair(4))
 
         current_x += 15
         if self.filter_running:
-             self.stdscr.addstr(filter_y, current_x, "[R: Running Only]", curses.color_pair(2) | curses.A_REVERSE)
-             current_x += 18
+            self.stdscr.addstr(
+                filter_y,
+                current_x,
+                "[R: Running Only]",
+                curses.color_pair(2) | curses.A_REVERSE,
+            )
+            current_x += 18
 
         if self.filter_outdated:
-             self.stdscr.addstr(filter_y, current_x, "[O: Outdated Only]", curses.color_pair(2) | curses.A_REVERSE)
+            self.stdscr.addstr(
+                filter_y,
+                current_x,
+                "[O: Outdated Only]",
+                curses.color_pair(2) | curses.A_REVERSE,
+            )
 
         self.stdscr.hline(list_start_y - 1, 0, curses.ACS_HLINE, max_x)
 
@@ -659,14 +777,15 @@ class Controller:
         if not self.vms:
             self.stdscr.addstr(list_start_y, 0, "No VMs found matching filters.")
         else:
-            from datetime import datetime, timedelta
+            from datetime import datetime
+
             now = datetime.now()
-            
+
             for idx in range(start_index, end_index):
                 vm = self.vms[idx]
                 mark = "[*] " if self.selected[idx] else "[ ] "
                 status = "running" if vm.active else "paused"
-                
+
                 # Calculate expiration
                 is_expiring_soon = False
                 end_date_str = ""
@@ -679,12 +798,12 @@ class Controller:
                         # Remove timezone for comparison if needed, or make now aware
                         # Assuming simple comparison is enough or strip tz
                         if end_dt.tzinfo:
-                            end_dt = end_dt.replace(tzinfo=None) # naive comparison
-                        
+                            end_dt = end_dt.replace(tzinfo=None)  # naive comparison
+
                         days_left = (end_dt - now).days
                         if days_left <= 7:
                             is_expiring_soon = True
-                        
+
                         end_date_str = f" [Ends: {end_dt.strftime('%Y-%m-%d')}]"
                     except Exception as e:
                         logger.debug(f"Error parsing date {vm.end_date}: {e}")
@@ -693,21 +812,21 @@ class Controller:
                 is_excluded = getattr(vm, "exclude_pause", False)
                 exclusion_mark = " [NO PAUSE]" if is_excluded else ""
                 line = base_line + exclusion_mark
-                
+
                 # Color Logic
                 # Active: Green (2)
                 # Paused: Grey (White/Dim - 4)
                 # Expiring Soon: Red (1) - Overrides others? User said "make the machines that will enid within 7 days red"
-                
+
                 if is_expiring_soon:
-                    color = curses.color_pair(1) # Red
+                    color = curses.color_pair(1)  # Red
                 elif vm.active:
-                    color = curses.color_pair(2) # Green
+                    color = curses.color_pair(2)  # Green
                 else:
-                    color = curses.color_pair(4) | curses.A_DIM # Grey/Dim White
-                
+                    color = curses.color_pair(4) | curses.A_DIM  # Grey/Dim White
+
                 display_idx = list_start_y + (idx - start_index)
-                
+
                 if idx == self.current_row:
                     self.stdscr.addstr(display_idx, 0, line, color | curses.A_REVERSE)
                 else:
@@ -716,22 +835,35 @@ class Controller:
         # 5. Footer (Commands)
         footer_y = max_y - footer_height
         self.stdscr.hline(footer_y - 1, 0, curses.ACS_HLINE, max_x)
-        
+
         commands = [
-            "j/k: Move", "J/K: Page", "Space/Enter: Select", "a: Select All",
-            "p: Pause", "r: Resume", "u: Update",
-            f"1-{len(all_filters)}: Toggle Filters", "+: Add Filter",
-            "f: Toggle User Filter", "n: Rename User", "e: End Date", "E: Exclude",
-            "c: Create VMs", "d: Delete VMs", "R: Running Only", "O: Outdated", "s: SSH", "l: Logs", "q: Quit"
+            "j/k: Move",
+            "J/K: Page",
+            "Space/Enter: Select",
+            "a: Select All",
+            "p: Pause",
+            "r: Resume",
+            "u: Update",
+            f"1-{len(all_filters)}: Toggle Filters",
+            "+: Add Filter",
+            "f: Toggle User Filter",
+            "n: Rename User",
+            "e: End Date",
+            "E: Exclude",
+            "c: Create VMs",
+            "d: Delete VMs",
+            "R: Running Only",
+            "O: Outdated",
+            "s: SSH",
+            "l: Logs",
+            "q: Quit",
         ]
-        
-        command_str = " | ".join(commands)
-        
+
         # Auto-wrap logic
         current_line = ""
         line_idx = 0
         separator = " | "
-        
+
         for cmd in commands:
             # Check if adding the next command would exceed the width
             if len(current_line) + len(separator) + len(cmd) < max_x:
@@ -745,13 +877,13 @@ class Controller:
                 current_line = cmd
                 # Stop if we run out of vertical space (reserve 1 line for page info)
                 if line_idx >= footer_height - 1:
-                    break 
-        
+                    break
+
         # Print the last line of commands
         if current_line and line_idx < footer_height - 1:
-             self.stdscr.addstr(footer_y + line_idx, 0, current_line)
-             line_idx += 1
-        
+            self.stdscr.addstr(footer_y + line_idx, 0, current_line)
+            line_idx += 1
+
         page_info = f"Page {self.current_page + 1}/{self.max_pages + 1}"
         self.stdscr.addstr(footer_y + line_idx, 0, page_info)
 
@@ -763,13 +895,14 @@ class Controller:
             self.stdscr.addstr(log_start_y, 0, "=== LOGS ===", curses.A_BOLD)
             for idx, log in enumerate(self.logs[-10:]):
                 if log_start_y + 1 + idx < max_y:
-                     self.stdscr.addstr(log_start_y + 1 + idx, 0, log.strip())
+                    self.stdscr.addstr(log_start_y + 1 + idx, 0, log.strip())
 
         self.stdscr.refresh()
 
-    def show_status_message(self, message) -> None:
+    def show_status_message(self, message, status_type="info") -> None:
         self.status_message = message
-        if not hasattr(self, 'stdscr') or self.stdscr is None:
+        self.status_type = status_type
+        if not hasattr(self, "stdscr") or self.stdscr is None:
             return
 
         try:
@@ -825,12 +958,12 @@ class CreationWizard:
         while True:
             self.stdscr.clear()
             height, width = self.stdscr.getmaxyx()
-            
+
             # Title
             title = "Bulk VM Creation Wizard"
             self.stdscr.addstr(0, 0, title, curses.A_BOLD)
             self.stdscr.hline(1, 0, curses.ACS_HLINE, width)
-            
+
             action = None
             if self.step == 0:
                 action = self.step_select_user_file(height, width)
@@ -842,51 +975,53 @@ class CreationWizard:
                 action = self.step_review(height, width)
             elif self.step == 4:
                 action = self.step_creation(height, width)
-                break # Exit after creation
-            
-            if action == 'quit' or self.step == -1:
+                break  # Exit after creation
+
+            if action == "quit" or self.step == -1:
                 break
-            
+
     def step_select_user_file(self, height, width):
         self.stdscr.addstr(2, 0, "Step 1: Select User File (users/)")
-        
-        users_dir = self.scriptdir.parent.parent / "users" # Assuming structure
+
         # Better: use config or relative path from cwd
         # User said "users/" folder. Let's assume it's in CWD or project root.
-        # scriptdir is USER_CONFIG_DIR. 
+        # scriptdir is USER_CONFIG_DIR.
         # Let's try CWD/users first
         import os
+
         cwd = os.getcwd()
         users_path = os.path.join(cwd, "users")
-        
+
         if not os.path.exists(users_path):
-             self.stdscr.addstr(4, 0, f"Error: 'users' directory not found at {users_path}")
-             self.stdscr.addstr(6, 0, "Press any key to exit...")
-             self.stdscr.getch()
-             self.step = -1 # Exit
-             return 'quit'
+            self.stdscr.addstr(
+                4, 0, f"Error: 'users' directory not found at {users_path}"
+            )
+            self.stdscr.addstr(6, 0, "Press any key to exit...")
+            self.stdscr.getch()
+            self.step = -1  # Exit
+            return "quit"
 
         files = [f for f in os.listdir(users_path) if f.endswith(".txt")]
-        
+
         if not files:
             self.stdscr.addstr(4, 0, "No .txt files found in users/")
             self.stdscr.getch()
             self.step = -1
-            return 'quit'
-            
+            return "quit"
+
         current_selection = 0
-        
+
         while True:
             for idx, f in enumerate(files):
                 if idx == current_selection:
                     self.stdscr.addstr(4 + idx, 0, f"> {f}", curses.A_REVERSE)
                 else:
                     self.stdscr.addstr(4 + idx, 0, f"  {f}")
-            
+
             # Preview content
             preview_y = 4
             preview_x = 40
-            
+
             # Clear preview area
             for i in range(height - preview_y - 2):
                 self.stdscr.move(preview_y + i, preview_x)
@@ -895,50 +1030,57 @@ class CreationWizard:
             self.stdscr.addstr(preview_y - 1, preview_x, "File Content Preview:")
             try:
                 with open(os.path.join(users_path, files[current_selection]), "r") as f:
-                    lines = f.readlines()[:20] # Show more lines
+                    lines = f.readlines()[:20]  # Show more lines
                     for i, line in enumerate(lines):
                         if preview_y + i < height - 2:
-                            self.stdscr.addstr(preview_y + i, preview_x, line.strip()[:40])
-            except:
+                            self.stdscr.addstr(
+                                preview_y + i, preview_x, line.strip()[:40]
+                            )
+            except Exception:
                 pass
 
-            self.stdscr.addstr(height - 2, 0, "UP/DOWN/j/k: Select | ENTER: Confirm | q: Quit")
-            
+            self.stdscr.addstr(
+                height - 2, 0, "UP/DOWN/j/k: Select | ENTER: Confirm | q: Quit"
+            )
+
             key = self.stdscr.getch()
-            if key == ord('q'):
-                self.step = -1 # Exit loop in run() needs to handle this
-                return 'quit'
-            elif (key == curses.KEY_UP or key == ord('k')) and current_selection > 0:
+            if key == ord("q"):
+                self.step = -1  # Exit loop in run() needs to handle this
+                return "quit"
+            elif (key == curses.KEY_UP or key == ord("k")) and current_selection > 0:
                 current_selection -= 1
-            elif (key == curses.KEY_DOWN or key == ord('j')) and current_selection < len(files) - 1:
+            elif (
+                key == curses.KEY_DOWN or key == ord("j")
+            ) and current_selection < len(files) - 1:
                 current_selection += 1
-            elif key == ord('\n'):
+            elif key == ord("\n"):
                 self.users_file = os.path.join(users_path, files[current_selection])
                 self.step += 1
-                return 'next'
-    
+                return "next"
+
     def step_select_template_file(self, height, width):
         self.stdscr.addstr(2, 0, "Step 2: Select Template File (templates/)")
-        
+
         import os
+
         cwd = os.getcwd()
         templates_path = os.path.join(cwd, "templates")
-        
+
         files = [f for f in os.listdir(templates_path) if f.endswith(".json")]
-        
+
         current_selection = 0
-        
+
         while True:
             for idx, f in enumerate(files):
                 if idx == current_selection:
                     self.stdscr.addstr(4 + idx, 0, f"> {f}", curses.A_REVERSE)
                 else:
                     self.stdscr.addstr(4 + idx, 0, f"  {f}")
-            
+
             # Preview content
             preview_y = 4
             preview_x = 40
-            
+
             # Clear preview area
             for i in range(height - preview_y - 2):
                 self.stdscr.move(preview_y + i, preview_x)
@@ -946,155 +1088,173 @@ class CreationWizard:
 
             self.stdscr.addstr(preview_y - 1, preview_x, "Template Preview:")
             try:
-                with open(os.path.join(templates_path, files[current_selection]), "r") as f:
+                with open(
+                    os.path.join(templates_path, files[current_selection]), "r"
+                ) as f:
                     lines = f.readlines()[:20]
                     for i, line in enumerate(lines):
                         if preview_y + i < height - 2:
-                            self.stdscr.addstr(preview_y + i, preview_x, line.strip()[:40])
-            except:
+                            self.stdscr.addstr(
+                                preview_y + i, preview_x, line.strip()[:40]
+                            )
+            except Exception:
                 pass
 
-            self.stdscr.addstr(height - 2, 0, "UP/DOWN/j/k: Select | ENTER: Confirm | b: Back | q: Quit")
-            
+            self.stdscr.addstr(
+                height - 2,
+                0,
+                "UP/DOWN/j/k: Select | ENTER: Confirm | b: Back | q: Quit",
+            )
+
             key = self.stdscr.getch()
-            if key == ord('q'):
+            if key == ord("q"):
                 self.step = -1
-                return 'quit'
-            elif key == ord('b'):
+                return "quit"
+            elif key == ord("b"):
                 self.step -= 1
-                return 'back'
-            elif (key == curses.KEY_UP or key == ord('k')) and current_selection > 0:
+                return "back"
+            elif (key == curses.KEY_UP or key == ord("k")) and current_selection > 0:
                 current_selection -= 1
-            elif (key == curses.KEY_DOWN or key == ord('j')) and current_selection < len(files) - 1:
+            elif (
+                key == curses.KEY_DOWN or key == ord("j")
+            ) and current_selection < len(files) - 1:
                 current_selection += 1
-            elif key == ord('\n'):
-                self.template_file = os.path.join(templates_path, files[current_selection])
+            elif key == ord("\n"):
+                self.template_file = os.path.join(
+                    templates_path, files[current_selection]
+                )
                 self.step += 1
-                return 'next'
+                return "next"
 
     def step_options(self, height, width):
         self.stdscr.addstr(2, 0, "Step 3: Options")
-        
+
         curses.echo()
         self.stdscr.addstr(4, 0, "Enter Project Prefix (e.g. UOS2): ")
         if self.project_prefix:
-             self.stdscr.addstr(4, 34, self.project_prefix)
+            self.stdscr.addstr(4, 34, self.project_prefix)
         else:
-             self.project_prefix = self.stdscr.getstr(4, 34).decode("utf-8")
-        
+            self.project_prefix = self.stdscr.getstr(4, 34).decode("utf-8")
+
         self.stdscr.addstr(6, 0, "Enter End Date (dd-mm-yyyy): ")
         if self.end_date:
-             self.stdscr.addstr(6, 29, self.end_date)
+            self.stdscr.addstr(6, 29, self.end_date)
         else:
-             self.end_date = self.stdscr.getstr(6, 29).decode("utf-8")
+            self.end_date = self.stdscr.getstr(6, 29).decode("utf-8")
         curses.noecho()
-        
+
         self.stdscr.addstr(height - 2, 0, "ENTER: Confirm | b: Back | q: Quit")
-        
+
         # Validate date
         try:
             from datetime import datetime
+
             datetime.strptime(self.end_date, "%d-%m-%Y")
         except ValueError:
             self.stdscr.addstr(8, 0, "Invalid date format!", curses.color_pair(1))
-            self.end_date = "" # Reset
+            self.end_date = ""  # Reset
             self.stdscr.getch()
-            return 'retry'
+            return "retry"
 
         key = self.stdscr.getch()
-        if key == ord('q'):
+        if key == ord("q"):
             self.step = -1
-            return 'quit'
-        elif key == ord('b'):
-            self.project_prefix = "" # Reset for re-entry
+            return "quit"
+        elif key == ord("b"):
+            self.project_prefix = ""  # Reset for re-entry
             self.end_date = ""
             self.step -= 1
-            return 'back'
-        elif key == ord('\n'):
+            return "back"
+        elif key == ord("\n"):
             self.step += 1
-            return 'next'
+            return "next"
 
     def step_review(self, height, width):
         self.stdscr.addstr(2, 0, "Step 4: Review")
-        
+
         self.stdscr.addstr(4, 0, f"User File: {self.users_file}")
         self.stdscr.addstr(5, 0, f"Template: {self.template_file}")
         self.stdscr.addstr(6, 0, f"Project: {self.project_prefix}")
         self.stdscr.addstr(7, 0, f"End Date: {self.end_date}")
-        
+
         # Parse users and show count
-        with open(self.users_file, 'r') as f:
+        assert self.users_file is not None
+        with open(self.users_file, "r") as f:
             self.parsed_users = [line.strip() for line in f if line.strip()]
-            
+
         self.stdscr.addstr(9, 0, f"Total VMs to create: {len(self.parsed_users)}")
-        
+
         self.stdscr.addstr(height - 2, 0, "ENTER: Create VMs | b: Back | q: Quit")
-        
+
         key = self.stdscr.getch()
-        if key == ord('q'):
+        if key == ord("q"):
             self.step = -1
-            return 'quit'
-        elif key == ord('b'):
+            return "quit"
+        elif key == ord("b"):
             self.step -= 1
-            return 'back'
-        elif key == ord('\n'):
+            return "back"
+        elif key == ord("\n"):
             self.step += 1
-            return 'next'
+            return "next"
 
     def step_creation(self, height, width):
         self.stdscr.addstr(2, 0, "Creating VMs...")
-        
+
         import json
         from datetime import datetime
-        
-        with open(self.template_file, 'r') as f:
+
+        assert self.template_file is not None
+        with open(self.template_file, "r") as f:
             template = json.load(f)
-            
+
         # Parse date
         dt = datetime.strptime(self.end_date, "%d-%m-%Y")
         dt = dt.replace(hour=23, minute=59, second=59)
         iso_date = dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-        
+
         success_count = 0
         total = len(self.parsed_users)
-        
+
         for idx, email in enumerate(self.parsed_users):
-            username = email.split('@')[0].replace('.', '')
-            
+            username = email.split("@")[0].replace(".", "")
+
             # Name: PROJECT-USERNAME
             vm_name = f"{self.project_prefix}-{username}"
-            
+
             # Hostname: projectusername (lowercase)
             hostname = f"{self.project_prefix}{username}".lower()
-            
+
             # Prepare data
             data = template.copy()
-            data['name'] = vm_name
-            data['end_time'] = iso_date
-            if 'meta' in data:
-                data['meta']['host_name'] = hostname
-            
+            data["name"] = vm_name
+            data["end_time"] = iso_date
+            if "meta" in data:
+                data["meta"]["host_name"] = hostname
+
             self.stdscr.addstr(4 + idx, 0, f"Creating {vm_name}...")
             self.stdscr.refresh()
-            
+
             if self.workspace.create_workspace(data):
                 self.stdscr.addstr(4 + idx, 40, "OK", curses.color_pair(2))
                 success_count += 1
             else:
                 self.stdscr.addstr(4 + idx, 40, "FAILED", curses.color_pair(1))
-                
+
             self.stdscr.refresh()
-            
+
             # Draw progress bar
             height, width = self.stdscr.getmaxyx()
             self.controller.draw_progress_bar(idx + 1, total, height - 4)
-            
-        self.stdscr.addstr(height - 2, 0, f"Finished. Created {success_count}/{total}. Press any key to continue.")
-        self.stdscr.getch()
-        
-        self.step = -1 # Exit wizard
-        return 'quit'
 
+        self.stdscr.addstr(
+            height - 2,
+            0,
+            f"Finished. Created {success_count}/{total}. Press any key to continue.",
+        )
+        self.stdscr.getch()
+
+        self.step = -1  # Exit wizard
+        return "quit"
 
 
 def main():
