@@ -178,7 +178,7 @@ class Workspace:
     def get_workspace(self, vm_id: str) -> Optional[Data]:
         """Fetches data for a single workspace."""
         excluded_ids_set = self.load_exclusions()
-        url = f"{config['surf']['URL']}/{vm_id}"
+        url = f"{config['surf']['URL']}/{vm_id}/"
         response = requests.get(url, headers=self.headers)
 
         if response.status_code == 200:
@@ -250,6 +250,79 @@ class Workspace:
             logger.error(
                 f"Failed to delete workspace {vm_id}. Status: {response.status_code}, Response: {response.text}"
             )
+            return False
+
+    def create_template_from_vm(self, vm_id: str, vm_name: str) -> bool:
+        """Fetches full VM details and saves it as a creation template."""
+        url = f"{config['surf']['URL']}/{vm_id}/"
+        response = requests.get(url, headers=self.headers)
+
+        if response.status_code != 200:
+            logger.error(f"Failed to fetch VM details for {vm_name}: {response.status_code}")
+            return False
+
+        vm_data = response.json()
+
+        # Extract required fields for creation
+        template = {
+            "co_id": vm_data.get("co_id"),
+            "wallet_id": vm_data.get("wallet_id"),
+            "description": "Template created from " + vm_name,
+            "name": "placeholder-name",
+            "end_time": "placeholder-endtime",
+            "meta": {}
+        }
+
+        # The key fields are inside 'meta' in the detailed response
+        source_meta = vm_data.get("meta", {})
+
+        meta_fields_to_copy = [
+            "application_offering_id",
+            "application_name",
+            "application_icon",
+            "application_type",
+            "subscription_tag",
+            "subscription_name",
+            "subscription_group_id",
+            "co_name",
+            "subscription_resource_type",
+            "flavours",
+            "storages",
+            "ips",
+            "networks",
+            "dataset_names",
+            "dataset_ids",
+            "interactive_parameters"
+        ]
+
+        for field in meta_fields_to_copy:
+            if field in source_meta:
+                if field == "flavours":
+                    cleaned_flavours = []
+                    for f in source_meta[field]:
+                        cleaned_flavours.append({
+                            "id": f.get("id"),
+                            "name": f.get("name"),
+                            "category": f.get("category")
+                        })
+                    template["meta"][field] = cleaned_flavours
+                else:
+                    template["meta"][field] = source_meta[field]
+
+        template["meta"]["host_name"] = "placeholder-hostname"
+
+        # Ensure templates directory exists
+        templates_dir = Path("templates")
+        templates_dir.mkdir(exist_ok=True)
+
+        output_file = templates_dir / f"template_{vm_name}.json"
+        try:
+            with output_file.open("w") as f:
+                json.dump(template, f, indent=2)
+            logger.info(f"Successfully created template at {output_file}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to write template file: {e}")
             return False
 
     def save(self, data: dict):

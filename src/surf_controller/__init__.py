@@ -18,5 +18,11 @@ def setup_config():
 
 setup_config()
 
-__version__ = "1.1.3"
+import importlib.metadata
+
+try:
+    __version__ = importlib.metadata.version("surf-controller")
+except importlib.metadata.PackageNotFoundError:
+    __version__ = "unknown"
+
 print(f"Welcome to surf_controller version {__version__}")

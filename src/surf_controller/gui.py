@@ -284,6 +284,33 @@ class Controller:
         self.show_status_message(f"Updated exclusions for {len(selected_vms)} VMs.", "success")
         self.stdscr.refresh()
 
+    def create_template(self):
+        selected_vms = [vm for i, vm in enumerate(self.vms) if self.selected[i]]
+        if len(selected_vms) == 1:
+            vm = selected_vms[0]
+            self.show_status_message(f"Creating template from {vm.name}...", "busy")
+            if self.workspace.create_template_from_vm(vm.id, vm.name):
+                self.show_status_message(
+                    f"Template created: templates/template_{vm.name}.json", "success"
+                )
+            else:
+                self.show_status_message(f"Failed to create template for {vm.name}", "error")
+        elif len(selected_vms) > 1:
+            self.show_status_message("Please select only one VM to create a template", "error")
+        else:
+            # If nothing selected, try current row
+            if self.current_row < len(self.vms):
+                vm = self.vms[self.current_row]
+                self.show_status_message(f"Creating template from {vm.name}...", "busy")
+                if self.workspace.create_template_from_vm(vm.id, vm.name):
+                    self.show_status_message(
+                        f"Template created: templates/template_{vm.name}.json", "success"
+                    )
+                else:
+                    self.show_status_message(f"Failed to create template for {vm.name}", "error")
+            else:
+                self.show_status_message("No VM selected", "error")
+
     def batch_update_end_date(self):
         selected_indices = [i for i, s in enumerate(self.selected) if s]
         if not selected_indices:
@@ -629,6 +656,8 @@ class Controller:
                 elif key == ord("c"):
                     self.start_creation_wizard()
                     self.start_background_update("all")  # Check for new VMs
+                elif key == ord("T"):
+                    self.create_template()
                 elif key == ord("d"):
                     self.delete_selected_vms()
                 elif key == ord("l"):
@@ -864,6 +893,7 @@ class Controller:
             "e: End Date",
             "E: Exclude",
             "c: Create VMs",
+            "T: Template",
             "d: Delete VMs",
             "R: Running Only",
             "O: Outdated",
@@ -1216,6 +1246,7 @@ class CreationWizard:
         self.stdscr.addstr(2, 0, "Creating VMs...")
 
         import json
+        import copy
         from datetime import datetime
 
         assert self.template_file is not None
@@ -1240,7 +1271,7 @@ class CreationWizard:
             hostname = f"{self.project_prefix}{username}".lower()
 
             # Prepare data
-            data = template.copy()
+            data = copy.deepcopy(template)
             data["name"] = vm_name
             data["end_time"] = iso_date
             if "meta" in data:
