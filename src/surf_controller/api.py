@@ -12,7 +12,7 @@ import requests
 from surf_controller.setup import USER_CONFIG_DIR
 from surf_controller.utils import config, logger
 
-Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date"])
+Data = namedtuple("Data", ["id", "name", "active", "ip", "exclude_pause", "end_date", "owner"])
 
 
 class Action:
@@ -32,6 +32,21 @@ class Action:
         else:
             logger.warning(f"CSRF token not found at {self.csrf_token_file}")
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
+        self.SHUTDOWN_LOG = self.scriptdir / "shutdowns.csv"
+
+    def _log_shutdown(self, item: Data):
+        """Logs a successful shutdown to the CSV file."""
+        file_exists = self.SHUTDOWN_LOG.exists()
+        try:
+            with self.SHUTDOWN_LOG.open("a", newline="") as csvfile:
+                writer = csv.writer(csvfile)
+                if not file_exists:
+                    writer.writerow(["timestamp", "vm_id", "vm_name", "owner"])
+                
+                timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+                writer.writerow([timestamp, item.id, item.name, item.owner])
+        except Exception as e:
+            logger.error(f"Failed to log shutdown to CSV: {e}")
 
     def __call__(self, do: str, data: list, id_filter: list, progress_callback=None):
         # Filter items first to know the total count
@@ -73,6 +88,8 @@ class Action:
                     logger.info(
                         f"SUCCESS {do} {item.name}"
                     )
+                    if do == "pause":
+                        self._log_shutdown(item)
             except Exception as e:
                 errors += 1
                 logger.error(f"EXCEPTION {do} {item.name}: {e}")
@@ -162,6 +179,9 @@ class Workspace:
                     ip = "Not available"
 
                 end_date = result.get("end_time", "")
+                
+                # Fetch owner if available in detailed meta
+                owner = result.get("owner_id", "Unknown")
 
                 if self.filter and username and username not in result["name"]:
                     continue
@@ -175,12 +195,26 @@ class Workspace:
                         ip,
                         exclude_pause_status,
                         end_date,
+                        owner,
                     )
                 )
             return results
         else:
             logger.info(f"Failed to fetch data. Status code: {response.status_code}")
             return []
+
+    def get_workspace_details(self, vm_id: str) -> Optional[dict]:
+        """Fetches full detailed data for a single workspace, including actions."""
+        url = f"{config['surf']['URL']}/{vm_id}/"
+        response = requests.get(url, headers=self.headers)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(
+                f"Failed to fetch workspace details for {vm_id}. Status: {response.status_code}"
+            )
+            return None
 
     def get_workspace(self, vm_id: str) -> Optional[Data]:
         """Fetches data for a single workspace."""
@@ -194,6 +228,7 @@ class Workspace:
             meta = result.get("resource_meta", {})
             ip = meta.get("ip", "Not available")
             end_date = result.get("end_time", "")
+            owner = result.get("owner_id", "Unknown")
 
             exclude_pause_status = vm_id in excluded_ids_set
 
@@ -204,6 +239,7 @@ class Workspace:
                 ip,
                 exclude_pause_status,
                 end_date,
+                owner,
             )
         else:
             logger.error(
@@ -336,19 +372,25 @@ class Workspace:
     def save(self, data: dict):
         with self.OUTPUT_FILE.open("w", newline="") as csvfile:
             writer = csv.writer(csvfile)
-            writer.writerow(["id", "name", "active", "ip"])  # Write header
+            writer.writerow(["id", "name", "active", "ip", "end_date", "owner"])  # Write header
             for result in data["results"]:
                 meta = result["resource_meta"]
                 if "ip" in meta:
                     ip = meta["ip"]
                 else:
                     ip = "Not available"
+                
+                end_date = result.get("end_time", "")
+                owner = result.get("owner_id", "Unknown")
+
                 writer.writerow(
                     [
                         result["id"],
                         result["name"],
                         result["active"],
                         ip,
+                        end_date,
+                        owner,
                     ]
                 )
 
@@ -382,7 +424,8 @@ class Workspace:
                             active,
                             row["ip"],
                             exclude_pause_status,
-                            "",  # End date not currently saved in CSV, maybe add later or fetch fresh
+                            row.get("end_date", ""),
+                            row.get("owner", "Unknown"),
                         )
                     )
             logger.info(f"Loaded {len(results)} workspaces from cache")

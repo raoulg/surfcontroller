@@ -24,7 +24,7 @@ WORKDIR /app
 COPY --from=builder /app/dist /app/dist
 
 # Install the package from the wheel
-RUN pip install /app/dist/*.whl flask
+RUN pip install /app/dist/*.whl flask pandas plotly
 
 # Copy scheduler files
 COPY scheduler/app.py /app/

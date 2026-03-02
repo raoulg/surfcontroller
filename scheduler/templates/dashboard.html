@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Surf Controller Scheduler</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f7f6;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .nav {
+            margin-bottom: 20px;
+        }
+
+        .nav a {
+            margin-right: 15px;
+            text-decoration: none;
+            color: #007bff;
+        }
+
+        .nav a:hover {
+            text-decoration: underline;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+
+        .filters {
+            margin-bottom: 20px;
+        }
+
+        .filters a {
+            display: inline-block;
+            padding: 8px 15px;
+            margin-right: 10px;
+            border-radius: 4px;
+            background: #e9ecef;
+            color: #333;
+            text-decoration: none;
+        }
+
+        .filters a.active {
+            background: #007bff;
+            color: white;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #f8f9fa;
+        }
+
+        .nudge-btn {
+            background-color: #ffc107;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="nav">
+        <a href="{{ url_for('index') }}">← Back to Dashboard</a>
+    </div>
+
+    <h1>Metrics Dashboard</h1>
+
+    <div class="filters">
+        <a href="?filter=all" class="{{ 'active' if filter == 'all' else '' }}">All Time</a>
+        <a href="?filter=month" class="{{ 'active' if filter == 'month' else '' }}">Last Month</a>
+        <a href="?filter=week" class="{{ 'active' if filter == 'week' else '' }}">Last Week</a>
+    </div>
+
+    {% if plot_json %}
+    <div class="card">
+        <div id="shutdownPlot"></div>
+    </div>
+    {% else %}
+    <div class="card">
+        <p>No shutdown data available for the selected period.</p>
+    </div>
+    {% endif %}
+
+    {% if top_vms_usage %}
+    <div class="card">
+        <h2>Top Usage & Shutdowns per Student VM</h2>
+        <p>Calculated from action history for VMs that frequently require scheduler shutdowns.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>VM Name (Student)</th>
+                    <th>Usage (Approx Hours)</th>
+                    <th>Scheduler Shutdowns</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for vm in top_vms_usage %}
+                <tr>
+                    <td>{{ vm.vm_name }}</td>
+                    <td>{{ vm.hours }}h</td>
+                    <td>{{ vm.shutdowns }}</td>
+                    <td>
+                        <button class="nudge-btn" onclick="alert('Student Message Template:\n\nHey, I noticed you often forget to shut down your machine ({{ vm.vm_name }}). You have been using it for {{ vm.hours }} hours. Please be more careful!')">Message Template</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <script>
+        {% if plot_json %}
+        var graphs = {{ plot_json | safe }};
+        Plotly.newPlot('shutdownPlot', graphs.data, graphs.layout);
+        {% endif %}
+    </script>
+</body>
+
+</html>

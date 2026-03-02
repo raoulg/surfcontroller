@@ -6,6 +6,8 @@ authors = [{ name = "Raoul Grouls", email = "Raoul.Grouls@han.nl" }]
 dependencies = [
     "requests>=2.32.3",
     "flask>=3.0.0",
+    "pandas",
+    "plotly",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"

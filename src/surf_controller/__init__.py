@@ -1,3 +1,4 @@
+import importlib.metadata
 import shutil
 from pathlib import Path
 
@@ -18,7 +19,6 @@ def setup_config():
 
 setup_config()
 
-import importlib.metadata
 
 try:
     __version__ = importlib.metadata.version("surf-controller")
