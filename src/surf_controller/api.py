@@ -115,6 +115,8 @@ class Workspace:
         self.OUTPUT_FILE = self.scriptdir / config["files"]["ids"]
         self.EXCLUSIONS_FILE = self.scriptdir / "exclusions.json"
         self.filter = False
+        # HTTP status of the last list request, None before the first call
+        self.last_status: Optional[int] = None
 
         # Set up the headers for the request
         self.headers = {
@@ -161,6 +163,7 @@ class Workspace:
         # Make the GET request
         excluded_ids_set = self.load_exclusions()
         response = requests.get(self.URL, headers=self.headers)
+        self.last_status = response.status_code
 
         # Check if the request was successful
         if response.status_code == 200:
@@ -264,13 +267,24 @@ class Workspace:
             return False, str(e)
 
     def create_workspace(self, data: dict) -> tuple[bool, str]:
-        """Creates a new workspace."""
+        """Creates a new workspace.
+
+        On success the message is the id of the new workspace when the API
+        returns one, and "OK" otherwise.
+        """
         url = f"{config['surf']['URL']}/"
         try:
             response = requests.post(url, headers=self.headers, json=data)
             if response.status_code in [200, 201]:
-                logger.info("Successfully created workspace")
-                return True, "OK"
+                ws_id = ""
+                try:
+                    body = response.json()
+                    if isinstance(body, dict):
+                        ws_id = str(body.get("id") or "")
+                except ValueError:
+                    pass
+                logger.info(f"Successfully created workspace {ws_id}".rstrip())
+                return True, ws_id or "OK"
             else:
                 msg = f"Status {response.status_code}: {response.text}"
                 logger.error(f"Failed to create workspace. {msg}")
@@ -492,9 +506,10 @@ def first_run(stdscr: curses.window):
         stdscr.refresh()
 
         workspace = Workspace()
-        vms = workspace.get_workspaces(save=False)
+        workspace.get_workspaces(save=False)
 
-        if vms is None:
+        # get_workspaces returns [] on failure, so check the status instead
+        if workspace.last_status != 200:
             stdscr.clear()
             stdscr.addstr(
                 0,
